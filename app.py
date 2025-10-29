@@ -285,6 +285,8 @@ elif page == "ℹ️ Informasi Data":
 
         # Quick diagnostics: duplicates, missing percentages, high-cardinality
         st.markdown("### 🔎 Pemeriksaan Cepat Data")
+        st.info("Catatan: pemeriksaan di bawah hanya bersifat informasional dan TIDAK mengubah dataset Anda. Untuk tindakan pembersihan, gunakan halaman 'Preprocessing & Encoding'.")
+
         dup_count = int(df.duplicated().sum())
         st.write(f"**Duplikat baris:** {dup_count}")
 
