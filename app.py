@@ -282,6 +282,54 @@ elif page == "ℹ️ Informasi Data":
         # Statistical description
         st.markdown("### 📈 Statistik Deskriptif")
         st.dataframe(df.describe(include='all'))
+
+        # Quick diagnostics: duplicates, missing percentages, high-cardinality
+        st.markdown("### 🔎 Pemeriksaan Cepat Data")
+        dup_count = int(df.duplicated().sum())
+        st.write(f"**Duplikat baris:** {dup_count}")
+
+        missing_pct = (df.isnull().mean() * 100).sort_values(ascending=False)
+        missing_df = missing_pct[missing_pct > 0].to_frame(name="Missing (%)")
+        if not missing_df.empty:
+            st.markdown("#### 📉 Kolom dengan nilai kosong (persentase)")
+            st.dataframe(missing_df, use_container_width=True)
+        else:
+            st.markdown("✅ Tidak ada nilai kosong yang terdeteksi")
+
+        high_cardinality = [c for c in df.columns if df[c].nunique(dropna=True) > 100]
+        if high_cardinality:
+            st.markdown("#### ⚠️ Kolom dengan banyak nilai unik (high-cardinality)")
+            st.write(
+                "Kolom berikut memiliki lebih dari 100 nilai unik — ini bisa menyulitkan encoding kategorikal. Pertimbangkan reduksi fitur atau pengelompokan kategori:"
+            )
+            st.write(high_cardinality)
+
+        # Suggest possible target and check imbalance
+        possible_targets = [c for c in df.columns if 'varietas' in c.lower()]
+        if possible_targets:
+            target_col = possible_targets[0]
+            st.markdown(f"#### 🎯 Potensi Kolom Target: **{target_col}**")
+            value_counts = df[target_col].value_counts(dropna=True, normalize=True)
+            top_classes = value_counts.head(5).to_frame(name='Proportion').reset_index()
+            st.dataframe(top_classes, use_container_width=True)
+            most_common_prop = value_counts.max()
+            if most_common_prop > 0.8:
+                st.warning("Dataset tampak sangat tidak seimbang (satu kelas mendominasi >80%). Pertimbangkan sampling atau penyesuaian metriks saat training.")
+        else:
+            st.info("ℹ️ Tidak ditemukan kolom target otomatis. Jika ada kolom target, pastikan namanya mengandung kata 'varietas' atau gunakan nama 'VarietasBenihPadi'.")
+
+        # Explanations expander
+        with st.expander("Apa yang ditampilkan di halaman ini (penjelasan singkat)"):
+            st.markdown(
+                """
+                - **Tipe Data**: Menunjukkan tipe pandas untuk setiap kolom (numerik, objek, dsb.). Berguna untuk mengetahui kolom mana yang perlu encoding.
+                - **Nilai Kosong**: Jumlah nilai kosong per kolom. Jika banyak, pertimbangkan imputasi atau penghapusan kolom/row.
+                - **Nilai Unik**: Banyaknya nilai unik per kolom. Kolom kategorikal dengan nilai unik sangat banyak perlu penanganan khusus (high-cardinality).
+                - **Statistik Deskriptif**: Rangkuman (mean, std, min, max) untuk kolom numerik dan ringkasan untuk kategorikal.
+                - **Pemeriksaan Cepat**: Ringkasan duplikat, kolom dengan missing besar, high-cardinality, dan saran kolom target yang terdeteksi otomatis.
+                """,
+                unsafe_allow_html=True,
+            )
         
         # Data visualization
         st.markdown("### 📊 Visualisasi Data")
