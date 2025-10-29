@@ -889,11 +889,15 @@ elif page == "🤖 Training Model":
                 summary_data = []
                 for model_name, metrics in results.items():
                     acc_mean, acc_std = metrics["accuracy"]
+                    prec_mean, prec_std = metrics.get("precision", (0.0, 0.0))
+                    rec_mean, rec_std = metrics.get("recall", (0.0, 0.0))
                     f1_mean, f1_std = metrics["f1"]
                     
                     summary_data.append({
                         "Model": model_name,
                         "Accuracy (%)": f"{acc_mean*100:.2f} ± {acc_std*100:.2f}",
+                        "Precision": f"{prec_mean:.3f} ± {prec_std:.3f}",
+                        "Recall": f"{rec_mean:.3f} ± {rec_std:.3f}",
                         "F1-Score": f"{f1_mean:.3f} ± {f1_std:.3f}",
                         "Status": "✅ Tersimpan"
                     })
@@ -1055,11 +1059,15 @@ elif page == "🔮 Testing/Prediksi":
                 if model_name in results:
                     metrics = results[model_name]
                     acc_mean, acc_std = metrics["accuracy"]
+                    prec_mean, prec_std = metrics.get("precision", (0.0, 0.0))
+                    rec_mean, rec_std = metrics.get("recall", (0.0, 0.0))
                     f1_mean, f1_std = metrics["f1"]
                     
                     summary_data.append({
                         "Model": model_name,
                         "Accuracy (%)": f"{acc_mean*100:.2f} ± {acc_std*100:.2f}",
+                        "Precision": f"{prec_mean:.3f} ± {prec_std:.3f}",
+                        "Recall": f"{rec_mean:.3f} ± {rec_std:.3f}",
                         "F1-Score": f"{f1_mean:.3f} ± {f1_std:.3f}",
                         "Status": "✅ Siap Prediksi"
                     })
