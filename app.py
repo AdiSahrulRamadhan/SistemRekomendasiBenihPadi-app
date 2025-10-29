@@ -1469,13 +1469,14 @@ elif page == "🔮 Testing/Prediksi":
                             display_name = "SVM"
                         else:
                             display_name = model_name.title()
-                            
-                            if pred_list[0][0]:  # If there's a prediction
-                                summary_data.append({
-                                    "Model": display_name,
-                                    "Rekomendasi Utama": pred_list[0][0],
-                                    "Confidence": f"{pred_list[0][1]:.1f}%"
-                                })
+
+                        # Append summary row if there's at least one prediction
+                        if pred_list and pred_list[0][0]:  # If there's a prediction
+                            summary_data.append({
+                                "Model": display_name,
+                                "Rekomendasi Utama": pred_list[0][0],
+                                "Confidence": f"{pred_list[0][1]:.1f}%"
+                            })
                     
                     if summary_data:
                         summary_df = pd.DataFrame(summary_data)
