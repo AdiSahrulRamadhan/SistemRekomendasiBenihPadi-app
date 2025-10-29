@@ -79,7 +79,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # Main title
-st.markdown('<h1 class="main-header">🌾 Aplikasi Prediksi Varietas Padi</h1>', unsafe_allow_html=True)
+st.markdown('<h1 class="main-header">🌾 Sistem Rekomendasi Benih Padi Berdasarkan Indikator Petani di Madura Menggunakan Perbandingan Metode Classifier</h1>', unsafe_allow_html=True)
 
 # Sidebar dengan logo dan judul
 with st.sidebar:
@@ -195,7 +195,33 @@ if page == "📤 Upload Data":
         type=['csv', 'xlsx'],
         help="Upload file dataset yang berisi data varietas padi"
     )
-    
+
+    # User guidance / help
+    with st.expander("Panduan Upload (Klik untuk melihat)", expanded=False):
+        st.markdown(
+            """
+            **Petunjuk singkat untuk mengunggah data:**
+
+            - Format file yang didukung: **CSV** atau **Excel (.xlsx)**.
+            - Separator CSV: aplikasi dapat mendeteksi otomatis; jika angka menggunakan koma sebagai desimal, pastikan format CSV sesuai (contoh: `1,5`).
+            - Kolom yang direkomendasikan (dipakai oleh model):
+              - `UmurTanaman` (numerik, hari)
+              - `Kerebahan`, `TeksturNasi`, `KetahananTerhadapHama`, `Kerontokan`, `WarnaGabah` (kategorikal)
+              - `PHTanah` (numerik)
+              - `PotensiHasil` (numerik, skala 1-10)
+              - `VarietasBenihPadi` atau kolom yang mengandung kata `varietas` sebagai label target
+            - Contoh baris CSV:
+
+              `116,Tahan,Pulen,Tahan,Tahan,Kuning Bersih,5.6,5,IR-64`
+
+            - Tips:
+              - Pastikan nama kolom ejaan konsisten. Aplikasi mencoba mendeteksi kolom umum, tetapi sebaiknya gunakan nama yang direkomendasikan di atas.
+              - Jika data memiliki nilai kosong, aplikasi akan mencoba menangani dengan imputasi sederhana; namun sebaiknya bersihkan data terlebih dahulu bila memungkinkan.
+              - Jika file berukuran besar, tunggu sampai proses upload dan pratinjau selesai.
+            """,
+            unsafe_allow_html=True,
+        )
+
     if uploaded_file is not None:
         try:
             # Read file
