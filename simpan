@@ -1,0 +1,1429 @@
+# app.py
+# ==============================
+# SISTEM REKOMENDASI BENIH PADI
+# ==============================
+# Tahapan: Upload → Eksplorasi → Preprocessing → Training → Prediksi
+# Model: Decision Tree, Naive Bayes, SVM (RBF)
+# ------------------------------
+
+import io
+import numpy as np
+import pandas as pd
+import streamlit as st
+import matplotlib.pyplot as plt
+
+from sklearn.model_selection import train_test_split, StratifiedKFold, cross_val_predict
+from sklearn.preprocessing import StandardScaler, LabelEncoder
+from sklearn.metrics import (
+    confusion_matrix, ConfusionMatrixDisplay,
+    classification_report, accuracy_score, f1_score
+)
+from sklearn.pipeline import Pipeline
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.naive_bayes import GaussianNB
+from sklearn.svm import SVC
+
+st.set_page_config(page_title="Sistem Rekomendasi Benih Padi", layout="wide")
+
+# =======================
+# Helper & Global Mapping
+# =======================
+def _norm(s):
+    return str(s).strip().lower().replace(" ", "").replace("_", "")
+
+# Mapping manual sesuai diskusi sebelumnya (case-insensitive)
+MAP_KEREBAHAN = {_norm(k): v for k, v in {
+    "Tahan": 9, "Sedang": 7, "Tidak Tahan": 4
+}.items()}
+MAP_TEKSTUR = {_norm(k): v for k, v in {
+    "Pulen": 8, "Agak Pulen": 7, "Agak Pera": 6, "Pera": 5
+}.items()}
+MAP_KETAHANAN = {_norm(k): v for k, v in {
+    "Tahan": 9, "Agak Tahan": 7, "Sedang": 7, "Agak Rentan": 6, "Rentan": 4, "Tidak Tahan": 4
+}.items()}
+MAP_KERONTOKAN = {_norm(k): v for k, v in {
+    "Tahan": 9, "Toleran": 9, "Kuat": 9, "Sedang": 7, "Agak Tahan": 7, "Mudah": 4, "Rentan": 4
+}.items()}
+MAP_WARNA = {_norm(k): v for k, v in {
+    "Kuning Bersih": 0, "Kuning Jerami": 1, "Kuning": 2
+}.items()}
+
+MANUAL_MAP = {
+    "Kerebahan": MAP_KEREBAHAN,
+    "TeksturNasi": MAP_TEKSTUR,
+    "KetahananTerhadapHama": MAP_KETAHANAN,
+    "Kerontokan": MAP_KERONTOKAN,
+    "WarnaGabah": MAP_WARNA,
+    # UmurTanaman diasumsikan numerik (hari)
+}
+
+DROP_COLS_DEFAULT = ["no", "namalengkap", "asaldesa", "asalkecamatan", "tahun"]
+
+# ===============
+# Session helpers
+# ===============
+def init_state():
+    for k, v in {
+        "df_raw": None,
+        "df_clean": None,
+        "TARGET_COL": None,
+        "X_columns": None,
+        "scaler": None,
+        "label_y": None,
+        "pipelines": {},
+        "trained": False
+    }.items():
+        if k not in st.session_state:
+            st.session_state[k] = v
+
+init_state()
+
+# =================
+# Sidebar Navigation
+# =================
+# =================
+# Sidebar Navigation
+# =================
+# Tambahkan ikon padi di atas judul
+# Tambahkan ikon padi di atas judul dengan background lingkaran
+# =================
+# Sidebar Navigation
+# =================
+# =================
+# Sidebar Navigation
+# =================
+# Tambahkan ikon padi di atas judul dengan background lingkaran
+st.sidebar.markdown("""
+<div style='display: flex; justify-content: center; margin-bottom: 20px;'>
+    <div style='background-color: #f0f2e6; 
+                width: 100px; 
+                height: 100px; 
+                border-radius: 50%; 
+                display: flex; 
+                justify-content: center; 
+                align-items: center;
+                box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.2);'>
+        <span style='font-size: 48px;'>🌾</span>
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
+# Judul yang sudah ada
+st.sidebar.markdown("<h1 style='text-align: center;'>Sistem Rekomendasi Benih berdasarkan Indikator Petani</h1>", unsafe_allow_html=True)
+
+# Ganti radio buttons dengan tombol-tombol navigasi
+st.sidebar.markdown("<p style='text-align: center; margin-top: 20px; margin-left: 40px; font-weight: bold;'>Pilih Tahapan</p>", unsafe_allow_html=True)
+
+# Tentukan nilai step awal jika belum ada
+if "nav_step" not in st.session_state:
+    st.session_state.nav_step = "1) Upload Data"
+    
+# Fungsi untuk mengubah halaman
+def nav_page(page_name):
+    # Update the state
+    st.session_state.nav_step = page_name
+    # Force a rerun of the app to reflect the change immediately
+    st.experimental_rerun()
+    
+# Buat tombol-tombol navigasi
+col1, col2 = st.sidebar.columns([1, 6])
+with col2:
+    # Cek halaman aktif untuk styling
+    is_active_1 = st.session_state.nav_step == "1) Upload Data"
+    button_1_style = "primary" if is_active_1 else "secondary"
+    if st.button("1) Upload Data", key="nav_1", type=button_1_style, use_container_width=True):
+        nav_page("1) Upload Data")
+        
+    is_active_2 = st.session_state.nav_step == "2) Visualisasi & Info"
+    button_2_style = "primary" if is_active_2 else "secondary"
+    if st.button("2) Visualisasi & Info", key="nav_2", type=button_2_style, use_container_width=True):
+        nav_page("2) Visualisasi & Info")
+        
+    is_active_3 = st.session_state.nav_step == "3) Preprocessing"
+    button_3_style = "primary" if is_active_3 else "secondary"
+    if st.button("3) Preprocessing", key="nav_3", type=button_3_style, use_container_width=True):
+        nav_page("3) Preprocessing")
+        
+    is_active_4 = st.session_state.nav_step == "4) Training Model"
+    button_4_style = "primary" if is_active_4 else "secondary"
+    if st.button("4) Training Model", key="nav_4", type=button_4_style, use_container_width=True):
+        nav_page("4) Training Model")
+        
+    is_active_5 = st.session_state.nav_step == "5) Testing / Prediksi"
+    button_5_style = "primary" if is_active_5 else "secondary"
+    if st.button("5) Testing / Prediksi", key="nav_5", type=button_5_style, use_container_width=True):
+        nav_page("5) Testing / Prediksi")
+
+# Gunakan step dari session state sekarang
+step = st.session_state.nav_step
+
+# ============
+# 1) UPLOAD
+# ============
+if step.startswith("1"):
+    st.title("1) Upload Data")
+    st.write("Unggah **CSV** atau **Excel** (xlsx).")
+
+    up = st.file_uploader("Pilih file dataset", type=["csv", "xlsx"])
+    if up:
+        try:
+            if up.name.endswith(".csv"):
+                # Gunakan pengaturan otomatis seperti di Colab
+                df = pd.read_csv(up, sep=None, engine="python", decimal=",")
+            else:
+                df = pd.read_excel(up)
+                
+            st.session_state.df_raw = df.copy()
+            st.success(f"✅ Berhasil memuat data: {df.shape[0]} baris × {df.shape[1]} kolom")
+            
+            st.subheader("📊 Data Teratas:")
+            st.dataframe(df.head(10), use_container_width=True)
+            
+        except Exception as e:
+            st.error(f"Gagal membaca file: {e}")
+            st.info("Jika masih gagal, coba periksa format file CSV Anda")
+
+# ========================
+# 2) VISUALISASI & INFO
+# ========================
+elif step.startswith("2"):
+    st.title("2) Visualisasi & Informasi Data")
+
+    df = st.session_state.df_raw
+    if df is None:
+        st.warning("Silakan unggah data terlebih dahulu di tahap 1.")
+    else:
+        c1, c2 = st.columns(2)
+        with c1:
+            st.subheader("🔎 Info Singkat")
+            st.write(f"**Shape**: {df.shape[0]} baris × {df.shape[1]} kolom")
+            st.write("**Kolom**:", list(df.columns))
+
+            st.write("**Missing values per kolom:**")
+            st.dataframe(df.isnull().sum())
+            
+            # Tambah statistik deskriptif
+            st.write("**Statistik deskriptif:**")
+            st.dataframe(df.describe(), use_container_width=True)
+            
+        with c2:
+            st.subheader("👀 Pratinjau Data")
+            st.dataframe(df.head(10), use_container_width=True)
+        
+        # Buat tab untuk berbagai jenis visualisasi
+        viz_tabs = st.tabs(["📊 Numerik", "🏷️ Kategorikal", "📈 Korelasi", "🎯 Target Analysis"])
+        
+        # Tab 1: Visualisasi Numerik
+        with viz_tabs[0]:
+            st.subheader("Visualisasi Data Numerik")
+            num_cols = df.select_dtypes(include="number").columns.tolist()
+            
+            if len(num_cols) > 0:
+                # Pilih variabel untuk visualisasi
+                num_var = st.selectbox("Pilih variabel numerik:", num_cols)
+                
+                # Buat 2 kolom untuk visualisasi berdampingan
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    # Histogram
+                    fig, ax = plt.subplots(figsize=(6, 4))
+                    ax.hist(df[num_var].dropna(), bins=20, alpha=0.7, color='skyblue', edgecolor='black')
+                    ax.set_title(f'Histogram {num_var}')
+                    ax.set_xlabel(num_var)
+                    ax.set_ylabel('Frekuensi')
+                    ax.grid(axis='y', alpha=0.75)
+                    st.pyplot(fig)
+                
+                with col2:
+                    # Box plot
+                    fig, ax = plt.subplots(figsize=(6, 4))
+                    ax.boxplot(df[num_var].dropna(), vert=False)
+                    ax.set_title(f'Box Plot {num_var}')
+                    ax.set_xlabel(num_var)
+                    ax.grid(axis='x', alpha=0.75)
+                    st.pyplot(fig)
+                
+                # Scatter plot jika ada minimal 2 kolom numerik
+                if len(num_cols) >= 2:
+                    st.subheader("Scatter Plot")
+                    x_var = st.selectbox("Pilih variabel X:", num_cols, key="scatter_x")
+                    y_var = st.selectbox("Pilih variabel Y:", [c for c in num_cols if c != x_var], key="scatter_y")
+                    
+                    fig, ax = plt.subplots(figsize=(8, 6))
+                    ax.scatter(df[x_var], df[y_var], alpha=0.6, color='teal', edgecolor='white')
+                    ax.set_title(f'Scatter Plot {x_var} vs {y_var}')
+                    ax.set_xlabel(x_var)
+                    ax.set_ylabel(y_var)
+                    ax.grid(True, alpha=0.3)
+                    st.pyplot(fig)
+            else:
+                st.info("Tidak ada variabel numerik dalam dataset.")
+        
+        # Tab 2: Visualisasi Kategorikal
+        with viz_tabs[1]:
+            st.subheader("Visualisasi Data Kategorikal")
+            # Deteksi kolom kategorikal (object atau string)
+            cat_cols = df.select_dtypes(include=['object', 'category']).columns.tolist()
+            
+            if len(cat_cols) > 0:
+                cat_var = st.selectbox("Pilih variabel kategorikal:", cat_cols)
+                
+                # Hitung frekuensi
+                value_counts = df[cat_var].value_counts().sort_values(ascending=False)
+                
+                # Batasi jumlah kategori yang ditampilkan jika terlalu banyak
+                if len(value_counts) > 15:
+                    st.info(f"Menampilkan 15 kategori teratas dari total {len(value_counts)} kategori")
+                    value_counts = value_counts.head(15)
+                
+                # Bar chart
+                fig, ax = plt.subplots(figsize=(10, 6))
+                value_counts.plot(kind='bar', ax=ax, color='salmon')
+                ax.set_title(f'Distribusi {cat_var}')
+                ax.set_xlabel(cat_var)
+                ax.set_ylabel('Frekuensi')
+                plt.xticks(rotation=45, ha='right')
+                plt.tight_layout()
+                st.pyplot(fig)
+                
+                # Pie chart jika kategori tidak terlalu banyak
+                if len(value_counts) <= 8:
+                    fig, ax = plt.subplots(figsize=(8, 8))
+                    ax.pie(value_counts, labels=value_counts.index, autopct='%1.1f%%', 
+                           shadow=True, startangle=90)
+                    ax.axis('equal')  # Equal aspect ratio ensures that pie is drawn as a circle
+                    ax.set_title(f'Proporsi {cat_var}')
+                    st.pyplot(fig)
+            else:
+                st.info("Tidak ada variabel kategorikal dalam dataset.")
+        
+        # Tab 3: Korelasi
+        with viz_tabs[2]:
+            st.subheader("Analisis Korelasi")
+            num_cols = df.select_dtypes(include="number").columns.tolist()
+            
+            if len(num_cols) > 1:
+                # Heatmap korelasi
+                corr_matrix = df[num_cols].corr()
+                
+                fig, ax = plt.subplots(figsize=(10, 8))
+                heatmap = ax.imshow(corr_matrix, cmap='coolwarm', interpolation='none')
+                
+                # Tambahkan nilai korelasi di setiap sel
+                for i in range(len(corr_matrix)):
+                    for j in range(len(corr_matrix)):
+                        text = ax.text(j, i, f'{corr_matrix.iloc[i, j]:.2f}', 
+                                       ha="center", va="center", 
+                                       color="white" if abs(corr_matrix.iloc[i, j]) > 0.5 else "black")
+                
+                ax.set_title('Heatmap Korelasi')
+                ax.set_xticks(np.arange(len(num_cols)))
+                ax.set_yticks(np.arange(len(num_cols)))
+                ax.set_xticklabels(num_cols, rotation=45, ha='right')
+                ax.set_yticklabels(num_cols)
+                plt.colorbar(heatmap)
+                plt.tight_layout()
+                st.pyplot(fig)
+                
+                # Scatter matrix untuk beberapa fitur teratas
+                st.subheader("Scatter Matrix")
+                st.info("Pilih 2-5 variabel untuk matrix plot")
+                selected_features = st.multiselect(
+                    "Pilih variabel:", 
+                    options=num_cols,
+                    default=num_cols[:min(3, len(num_cols))]
+                )
+                
+                if len(selected_features) >= 2 and len(selected_features) <= 5:
+                    fig, axes = plt.subplots(nrows=len(selected_features), ncols=len(selected_features), 
+                                             figsize=(10, 10))
+                    
+                    for i, feature_i in enumerate(selected_features):
+                        for j, feature_j in enumerate(selected_features):
+                            ax = axes[i, j]
+                            
+                            if i == j:  # Diagonal: histogram
+                                ax.hist(df[feature_i], bins=20, alpha=0.7, color='skyblue')
+                                ax.set_title(feature_i if i == 0 else "")
+                            else:  # Off-diagonal: scatter plots
+                                ax.scatter(df[feature_j], df[feature_i], alpha=0.5, s=5)
+                                
+                            if i == len(selected_features) - 1:  # Bottom row
+                                ax.set_xlabel(feature_j)
+                            else:
+                                ax.set_xticklabels([])
+                                
+                            if j == 0:  # First column
+                                ax.set_ylabel(feature_i)
+                            else:
+                                ax.set_yticklabels([])
+                    
+                    plt.tight_layout()
+                    st.pyplot(fig)
+                elif len(selected_features) > 0:
+                    st.warning("Pilih antara 2-5 variabel untuk scatter matrix")
+            else:
+                st.info("Butuh minimal 2 variabel numerik untuk analisis korelasi.")
+        
+        # Tab 4: Analisis Target (jika ada kolom yang mengandung 'varietas')
+        with viz_tabs[3]:
+            st.subheader("Analisis Variabel Target")
+            
+            # Coba temukan kolom target
+            possible_targets = [c for c in df.columns if "varietas" in c.lower()]
+            if possible_targets:
+                target_col = st.selectbox("Pilih kolom target:", possible_targets)
+                
+                # Tampilkan distribusi target
+                st.subheader(f"Distribusi {target_col}")
+                
+                # Bar chart untuk target
+                target_counts = df[target_col].value_counts()
+                
+                fig, ax = plt.subplots(figsize=(10, 6))
+                target_counts.plot(kind='bar', ax=ax, color='green')
+                ax.set_title(f'Distribusi {target_col}')
+                ax.set_ylabel('Jumlah')
+                plt.xticks(rotation=45, ha='right')
+                plt.tight_layout()
+                st.pyplot(fig)
+                
+                # Fitur numerik berdasarkan target
+                num_cols = df.select_dtypes(include="number").columns.tolist()
+                if num_cols:
+                    st.subheader("Perbedaan fitur berdasarkan target")
+                    feature = st.selectbox("Pilih fitur numerik:", num_cols)
+                    
+                    fig, ax = plt.subplots(figsize=(12, 6))
+                    
+                    # Batasi jumlah kelas yang ditampilkan jika terlalu banyak
+                    unique_targets = df[target_col].unique()
+                    if len(unique_targets) > 8:
+                        st.info(f"Terlalu banyak kelas target ({len(unique_targets)}). Menampilkan 8 kelas teratas.")
+                        top_targets = df[target_col].value_counts().head(8).index
+                        data_subset = df[df[target_col].isin(top_targets)]
+                        ax.boxplot([data_subset[data_subset[target_col]==t][feature].dropna() for t in top_targets],
+                                 labels=top_targets, vert=False)
+                    else:
+                        ax.boxplot([df[df[target_col]==t][feature].dropna() for t in unique_targets],
+                                 labels=unique_targets, vert=False)
+                    
+                    ax.set_title(f'{feature} berdasarkan {target_col}')
+                    ax.set_xlabel(feature)
+                    ax.grid(axis='x', alpha=0.75)
+                    plt.tight_layout()
+                    st.pyplot(fig)
+            else:
+                st.info("Tidak menemukan kolom target yang mengandung 'varietas'.")
+
+# =================
+# 3) PREPROCESSING
+# =================
+elif step.startswith("3"):
+    st.title("3) Preprocessing")
+
+    df = st.session_state.df_raw
+    if df is None:
+        st.warning("Silakan unggah data terlebih dahulu di tahap 1.")
+    else:
+        # Pilih kolom target otomatis (mengandung 'varietas')
+        possible_targets = [c for c in df.columns if "varietas" in c.lower()]
+        target_col = st.selectbox(
+            "Pilih kolom target (default: yang mengandung 'varietas')",
+            options=possible_targets if possible_targets else list(df.columns)
+        )
+
+        # Kolom yang dihapus
+        drop_cols_user = st.multiselect(
+            "Hapus kolom non-prediktif",
+            options=list(df.columns),
+            default=[c for c in DROP_COLS_DEFAULT if c in df.columns]
+        )
+
+        # Add train-test split controls
+        col1, col2 = st.columns(2)
+        with col1:
+            train_size = st.slider("Training set size (%)", 50, 90, 80, 5, 
+                                help="Persentase data yang digunakan untuk training")
+        with col2:
+            random_state = st.number_input("Random seed", 0, 999, 42, 
+                                        help="Seed untuk reproducibility")
+        # Tambahkan setelah definisi parameter train-test split (sekitar baris 453)
+        stratify = st.checkbox("Stratified sampling (menjaga distribusi kelas)", value=True,
+                            help="Pastikan distribusi kelas target tetap seimbang di training dan testing")
+
+        # Di step 3, simpan parameter ke session state
+        st.session_state.train_size = train_size/100  # konversi dari % ke proporsi
+        st.session_state.random_state = random_state
+        st.session_state.use_stratify = stratify
+                
+        # Struktur dengan tahapan tab untuk visualisasi
+        preprocessing_tabs = st.tabs([
+            "1) Hapus Kolom",
+            "2) Missing Values", 
+            "3) Encoding Manual", 
+            "4) Semua Numerik", 
+            "5) Encode Target", 
+            "6) Normalisasi Z-Score",
+            "Hasil Akhir"
+        ])
+        
+        # Tombol untuk menjalankan semua tahapan preprocessing
+        if st.button("🔄 Jalankan Semua Tahap Preprocessing", use_container_width=True):
+            with st.spinner("Memproses data..."):
+                # Dictionary untuk menyimpan hasil setiap tahap
+                results = {
+                    "original": df.copy(),
+                    "step1": None,  # Hasil setelah hapus kolom
+                    "step2": None,  # Hasil setelah imputasi missing
+                    "step3": None,  # Hasil setelah encoding manual
+                    "step4": None,  # Hasil setelah semua menjadi numerik
+                    "step5": None,  # Hasil setelah encoding target
+                    "step6": None   # Hasil setelah Z-score
+                }
+                
+                # ===== TAHAP 1: HAPUS KOLOM NON-PREDIKTIF =====
+                with preprocessing_tabs[0]:
+                    st.subheader("🧹 Tahap 1: Hapus Kolom Non-Prediktif")
+                    
+                    st.markdown("""
+                    **Tujuan:** Menghapus kolom yang tidak relevan untuk prediksi, seperti:
+                    - ID atau nomor urut
+                    - Nama atau identifikasi personal
+                    - Lokasi spesifik yang tidak relevan
+                    - Tahun atau tanggal yang tidak konsisten
+                    """)
+                    
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.subheader("📊 Data Sebelum")
+                        st.dataframe(df.head(), use_container_width=True)
+                    
+                    # Hapus kolom yang dipilih
+                    df_clean = df.drop(columns=[c for c in drop_cols_user if c in df.columns]).copy()
+                    results["step1"] = df_clean
+                    
+                    with col2:
+                        st.subheader("📊 Data Sesudah")
+                        st.dataframe(df_clean.head(), use_container_width=True)
+                    
+                    st.success(f"✅ Berhasil menghapus {len(drop_cols_user)} kolom:")
+                    st.write(f"🧹 Kolom yang dihapus: {[c for c in drop_cols_user if c in df.columns]}")
+                    st.write(f"✅ Sisa kolom: {df_clean.columns.tolist()}")
+                
+                # ===== TAHAP 2: HANDLING MISSING VALUES =====
+                with preprocessing_tabs[1]:
+                    st.subheader("🔍 Tahap 2: Deteksi & Isi Missing Values")
+                    
+                    st.markdown("""
+                    **Tujuan:** Mendeteksi dan mengisi nilai yang hilang (NA/null):
+                    - Nilai numerik diisi dengan median kolom tersebut
+                    - Nilai kategorikal diisi dengan modus (nilai yang paling sering muncul)
+                    """)
+                    
+                    # Tampilkan informasi missing values
+                    missing_info = df_clean.isnull().sum()
+                    missing_cols = missing_info[missing_info > 0]
+                    
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.subheader("📊 Data Sebelum")
+                        st.write("**Missing values per kolom:**")
+                        if len(missing_cols) > 0:
+                            st.dataframe(missing_cols, use_container_width=True)
+                        else:
+                            st.info("✓ Tidak ada missing values dalam dataset")
+                        st.dataframe(df_clean.head(), use_container_width=True)
+                    
+                    # Buat salinan data
+                    df_imputed = df_clean.copy()
+                    
+                    # Pisahkan target jika ada
+                    if target_col in df_imputed.columns:
+                        y_raw = df_imputed[target_col].copy()
+                        X = df_imputed.drop(columns=[target_col])
+                    else:
+                        X = df_imputed.copy()
+                        y_raw = None
+                    
+                    # Lakukan imputasi dan tracking perubahan
+                    impute_stats = {}
+                    for c in X.select_dtypes(include="number").columns:
+                        if X[c].isnull().sum() > 0:
+                            # Catat statistik sebelum imputasi
+                            impute_stats[c] = {
+                                "tipe": "numerik",
+                                "jumlah_na": X[c].isnull().sum(),
+                                "nilai_isian": X[c].median()
+                            }
+                            # Lakukan imputasi
+                            X[c] = X[c].fillna(X[c].median())
+                    
+                    for c in X.select_dtypes(exclude="number").columns:
+                        if X[c].isnull().sum() > 0:
+                            mode_val = X[c].mode()
+                            fill_val = mode_val[0] if len(mode_val) > 0 else ""
+                            # Catat statistik
+                            impute_stats[c] = {
+                                "tipe": "kategorikal",
+                                "jumlah_na": X[c].isnull().sum(),
+                                "nilai_isian": fill_val
+                            }
+                            # Lakukan imputasi
+                            X[c] = X[c].fillna(fill_val)
+                    
+                    # Gabungkan kembali dengan target jika ada
+                    if y_raw is not None:
+                        df_imputed = pd.concat([X, y_raw], axis=1)
+                    else:
+                        df_imputed = X
+                    
+                    results["step2"] = df_imputed
+                    
+                    with col2:
+                        st.subheader("📊 Data Sesudah")
+                        if impute_stats:
+                            st.write("**Detail imputasi yang dilakukan:**")
+                            for col, stats in impute_stats.items():
+                                st.write(f"- {col} ({stats['tipe']}): {stats['jumlah_na']} nilai diisi dengan {stats['nilai_isian']}")
+                        else:
+                            st.info("✓ Tidak ada nilai yang perlu diisi (tidak ada missing values)")
+                        st.dataframe(df_imputed.head(), use_container_width=True)
+                    
+                    if impute_stats:
+                        st.success(f"✅ Imputasi missing values selesai untuk {len(impute_stats)} kolom")
+                    else:
+                        st.info("Tidak ada missing values yang perlu diisi")
+                
+                # ===== TAHAP 3: ENCODING MANUAL KATEGORI =====
+                with preprocessing_tabs[2]:
+                    st.subheader("🔠 Tahap 3: Encoding Manual Kategori")
+                    
+                    st.markdown("""
+                    **Tujuan:** Mengubah nilai kategorikal menjadi numerik berdasarkan pemetaan domain:
+                    - Kerebahan: Tahan (9), Sedang (7), Tidak Tahan (4)
+                    - TeksturNasi: Pulen (8), Agak Pulen (7), Agak Pera (6), Pera (5)
+                    - Dan lain-lain sesuai pemetaan manual yang telah didefinisikan
+                    """)
+                    
+                    # Buat salinan data
+                    df_encoded = df_imputed.copy()
+                    
+                    # Pisahkan target jika ada
+                    if target_col in df_encoded.columns:
+                        y_raw = df_encoded[target_col].copy()
+                        X = df_encoded.drop(columns=[target_col])
+                    else:
+                        X = df_encoded.copy()
+                        y_raw = None
+                    
+                    # Identifikasi kolom yang akan di-encode manual
+                    manual_cols = [c for c in X.columns if c in MANUAL_MAP and not pd.api.types.is_numeric_dtype(X[c])]
+                    
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.subheader("📊 Data Sebelum")
+                        if manual_cols:
+                            st.write(f"**Kolom yang akan di-encode manual ({len(manual_cols)}):**")
+                            for col in manual_cols:
+                                unique_vals = X[col].dropna().unique()[:5]  # Show first 5 unique values
+                                st.write(f"- {col}: {list(unique_vals)}{'...' if len(X[col].unique()) > 5 else ''}")
+                        else:
+                            st.info("Tidak ada kolom yang perlu di-encode manual")
+                        
+                        st.dataframe(X[manual_cols].head() if manual_cols else X.head(), use_container_width=True)
+                    
+                    # Lakukan encoding manual
+                    encoding_results = {}
+                    for col_readable, mapper in MANUAL_MAP.items():
+                        if col_readable in X.columns and not pd.api.types.is_numeric_dtype(X[col_readable]):
+                            col = col_readable
+                            raw_norm = X[col].astype(str).map(_norm)
+                            mapped = raw_norm.map(mapper)
+                            
+                            # Tracking unmapped values
+                            unmapped = sorted(set(raw_norm[pd.isna(mapped)]))
+                            
+                            # Isi unmapped values dengan fallback
+                            if len(unmapped) > 0:
+                                mode_val = X[col].mode()[0] if len(X[col].mode()) > 0 else X[col].iloc[0]
+                                fallback = mapper.get(_norm(mode_val), 0.0)
+                                mapped = mapped.fillna(fallback)
+                                
+                                encoding_results[col] = {
+                                    "status": "partial",
+                                    "unmapped": unmapped,
+                                    "fallback": fallback,
+                                    "before_unique": X[col].nunique(),
+                                    "after_unique": mapped.nunique()
+                                }
+                            else:
+                                encoding_results[col] = {
+                                    "status": "success",
+                                    "before_unique": X[col].nunique(),
+                                    "after_unique": mapped.nunique()
+                                }
+                            
+                            # Update kolom dengan nilai hasil encoding
+                            X[col] = mapped.astype(float)
+                    
+                    # Gabungkan kembali dengan target jika ada
+                    if y_raw is not None:
+                        df_encoded = pd.concat([X, y_raw], axis=1)
+                    else:
+                        df_encoded = X
+                    
+                    results["step3"] = df_encoded
+                    
+                    with col2:
+                        st.subheader("📊 Data Sesudah")
+                        
+                        if encoding_results:
+                            st.write("**Hasil encoding manual:**")
+                            for col, res in encoding_results.items():
+                                if res["status"] == "success":
+                                    st.write(f"✅ {col}: {res['before_unique']} nilai unik → {res['after_unique']} nilai numerik")
+                                else:
+                                    st.write(f"⚠️ {col}: {res['before_unique']} nilai unik → {res['after_unique']} nilai numerik, dengan {len(res['unmapped'])} nilai tidak terpetakan")
+                                    if len(res['unmapped']) > 0:
+                                        st.write(f"   Nilai tidak terpetakan: {res['unmapped'][:5]}{'...' if len(res['unmapped']) > 5 else ''}")
+                                        st.write(f"   Fallback ke nilai: {res['fallback']}")
+                        else:
+                            st.info("Tidak ada kolom yang perlu di-encode")
+                        
+                        st.dataframe(df_encoded.head(), use_container_width=True)
+                    
+                    if encoding_results:
+                        st.success(f"✅ Encoding manual selesai untuk {len(encoding_results)} kolom")
+                    else:
+                        st.info("Tidak ada kolom yang perlu di-encode manual")
+                
+                # ===== TAHAP 4: PASTIKAN SEMUA NUMERIK =====
+                with preprocessing_tabs[3]:
+                    st.subheader("🔢 Tahap 4: Pastikan Semua Fitur Numerik")
+                    
+                    st.markdown("""
+                    **Tujuan:** Konversi semua kolom kategorikal yang tersisa menjadi numerik:
+                    - Menggunakan LabelEncoder untuk kategori yang tidak ditangani manual
+                    - Memastikan semua fitur menjadi numerik untuk pemodelan
+                    """)
+                    
+                    # Buat salinan data
+                    df_all_num = df_encoded.copy()
+                    
+                    # Pisahkan target jika ada
+                    if target_col in df_all_num.columns:
+                        y_raw = df_all_num[target_col].copy()
+                        X = df_all_num.drop(columns=[target_col])
+                    else:
+                        X = df_all_num.copy()
+                        y_raw = None
+                    
+                    # Identifikasi kolom non-numerik yang tersisa
+                    non_num_cols = X.select_dtypes(exclude="number").columns.tolist()
+                    
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.subheader("📊 Data Sebelum")
+                        
+                        if non_num_cols:
+                            st.write(f"**Kolom non-numerik yang tersisa ({len(non_num_cols)}):**")
+                            for col in non_num_cols:
+                                unique_vals = X[col].dropna().unique()[:5]  # Show first 5 unique values
+                                st.write(f"- {col}: {list(unique_vals)}{'...' if len(X[col].unique()) > 5 else ''}")
+                        else:
+                            st.info("✓ Semua kolom sudah numerik")
+                        
+                        st.dataframe(X[non_num_cols].head() if non_num_cols else X.head(), use_container_width=True)
+                    
+                    # Lakukan encoding untuk kolom non-numerik yang tersisa
+                    encoding_results = {}
+                    non_num = X.select_dtypes(exclude="number").columns.tolist()
+                    
+                    for col in non_num:
+                        le = LabelEncoder()
+                        X[col] = le.fit_transform(X[col].astype(str))
+                        
+                        encoding_results[col] = {
+                            "unique_values": len(le.classes_),
+                            "mapping": dict(zip(le.classes_[:5], range(min(5, len(le.classes_)))))
+                        }
+                    
+                    # Gabungkan kembali dengan target jika ada
+                    if y_raw is not None:
+                        df_all_num = pd.concat([X, y_raw], axis=1)
+                    else:
+                        df_all_num = X
+                    
+                    results["step4"] = df_all_num
+                    
+                    with col2:
+                        st.subheader("📊 Data Sesudah")
+                        
+                        if encoding_results:
+                            st.write("**Hasil encoding LabelEncoder:**")
+                            for col, res in encoding_results.items():
+                                st.write(f"✅ {col}: {res['unique_values']} nilai unik dikonversi")
+                                st.write(f"   Contoh mapping: {res['mapping']}{'...' if res['unique_values'] > 5 else ''}")
+                        else:
+                            st.info("✓ Semua kolom sudah numerik sebelumnya")
+                        
+                        # Periksa lagi apakah masih ada kolom non-numerik
+                        remaining_non_num = X.select_dtypes(exclude="number").columns.tolist()
+                        if remaining_non_num:
+                            st.warning(f"⚠️ Masih ada {len(remaining_non_num)} kolom non-numerik: {remaining_non_num}")
+                        else:
+                            st.success("✅ Semua kolom berhasil dikonversi ke numerik")
+                        
+                        st.dataframe(df_all_num.head(), use_container_width=True)
+                    
+                    if encoding_results:
+                        st.success(f"✅ Konversi ke numerik selesai untuk {len(encoding_results)} kolom")
+                    else:
+                        st.info("Semua kolom sudah numerik")
+                
+                # ===== TAHAP 5: ENCODE TARGET =====
+                with preprocessing_tabs[4]:
+                    st.subheader("🎯 Tahap 5: Encode Target")
+                    
+                    st.markdown("""
+                    **Tujuan:** Mengkonversi nilai target (varietas) menjadi kode numerik:
+                    - Menggunakan LabelEncoder untuk mengkonversi nama varietas ke indeks
+                    - Menyimpan encoder untuk bisa melakukan prediksi dan inverse transform nanti
+                    """)
+                    
+                    # Pastikan kolom target ada
+                    if target_col not in df_all_num.columns:
+                        st.error(f"❌ Kolom target '{target_col}' tidak ditemukan dalam data!")
+                        results["step5"] = df_all_num  # Skip this step
+                    else:
+                        # Buat salinan data
+                        df_target_encoded = df_all_num.copy()
+                        y_raw = df_target_encoded[target_col].copy()
+                        
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            st.subheader("📊 Target Sebelum")
+                            
+                            # Tampilkan distribusi target
+                            target_dist = y_raw.value_counts().reset_index()
+                            target_dist.columns = ['Varietas', 'Jumlah']
+                            
+                            st.write(f"**Distribusi target ({target_col}):**")
+                            st.dataframe(target_dist, use_container_width=True)
+                            
+                            # Visualisasi
+                            fig, ax = plt.subplots(figsize=(10, 6))
+                            bars = ax.bar(target_dist['Varietas'].astype(str), target_dist['Jumlah'], color='green')
+                            ax.set_title(f'Distribusi {target_col}')
+                            ax.set_xlabel('Varietas')
+                            ax.set_ylabel('Jumlah')
+                            plt.xticks(rotation=45, ha='right')
+                            plt.tight_layout()
+                            st.pyplot(fig)
+                        
+                        # Encode target
+                        label_y = LabelEncoder()
+                        y = label_y.fit_transform(y_raw.astype(str))
+                        
+                        # Update kolom target dengan nilai yang sudah di-encode
+                        df_target_encoded[target_col] = y
+                        
+                        # Simpan encoder untuk digunakan nanti
+                        st.session_state.label_y = label_y
+                        
+                        results["step5"] = df_target_encoded
+                        
+                        with col2:
+                            st.subheader("📊 Target Sesudah")
+                            
+                            # Buat tabel mapping
+                            mapping_df = pd.DataFrame({
+                                'Varietas': label_y.classes_,
+                                'Kode': range(len(label_y.classes_))
+                            })
+                            
+                            st.write("**Mapping target (varietas → kode):**")
+                            st.dataframe(mapping_df, use_container_width=True)
+                            
+                            # Visualisasi
+                            fig, ax = plt.subplots(figsize=(10, 6))
+                            ax.bar(mapping_df['Varietas'].astype(str), mapping_df['Kode'], color='orange')
+                            ax.set_title(f'Encoding {target_col}')
+                            ax.set_xlabel('Varietas')
+                            ax.set_ylabel('Kode')
+                            plt.xticks(rotation=45, ha='right')
+                            plt.tight_layout()
+                            st.pyplot(fig)
+                            
+                            # Tampilkan distribusi target setelah encoding
+                            encoded_dist = pd.Series(y).value_counts().sort_index().reset_index()
+                            encoded_dist.columns = ['Kode', 'Jumlah']
+                            
+                            st.write(f"**Distribusi target setelah encoding:**")
+                            st.dataframe(encoded_dist, use_container_width=True)
+                        
+                        st.success(f"✅ Encoding target selesai: {len(label_y.classes_)} kelas varietas")
+                
+                # ===== TAHAP 6: NORMALISASI Z-SCORE =====
+                with preprocessing_tabs[5]:
+                    st.subheader("📏 Tahap 6: Normalisasi Z-Score")
+                    
+                    st.markdown("""
+                    **Tujuan:** Standardisasi semua fitur numerik ke distribusi yang sama:
+                    - Mengubah semua fitur menjadi mean=0 dan std=1
+                    - Membuat skala fitur menjadi sebanding
+                    - Meningkatkan performa algoritma ML yang sensitif terhadap skala fitur
+                    """)
+                    
+                    # Buat salinan data dari tahap sebelumnya
+                    df_curr = results["step5"]
+                    
+                    # Pisahkan target jika ada
+                    if target_col in df_curr.columns:
+                        X_before = df_curr.drop(columns=[target_col])
+                        y = df_curr[target_col].copy()
+                    else:
+                        X_before = df_curr.copy()
+                        y = None
+                    
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.subheader("📊 Data Sebelum")
+                        
+                        st.write("**Statistik fitur:**")
+                        st.dataframe(X_before.describe().T[['mean', 'std', 'min', 'max']], use_container_width=True)
+                        
+                        # Visualisasi distribusi beberapa fitur sebelum normalisasi
+                        if len(X_before.columns) > 0:
+                            # Pilih beberapa fitur untuk visualisasi
+                            vis_cols = X_before.columns[:min(3, len(X_before.columns))]
+                            
+                            fig, ax = plt.subplots(figsize=(10, 6))
+                            X_before[vis_cols].boxplot(ax=ax)
+                            ax.set_title('Distribusi Fitur Sebelum Z-Score')
+                            ax.set_ylabel('Nilai')
+                            plt.tight_layout()
+                            st.pyplot(fig)
+                        
+                        st.dataframe(X_before.head(), use_container_width=True)
+                    
+                    # Lakukan normalisasi
+                    scaler = StandardScaler()
+                    X_scaled = pd.DataFrame(
+                        scaler.fit_transform(X_before),
+                        columns=X_before.columns,
+                        index=X_before.index
+                    )
+                    
+                    # Gabungkan kembali dengan target jika ada
+                    if y is not None:
+                        df_scaled = pd.concat([X_scaled, y], axis=1)
+                    else:
+                        df_scaled = X_scaled
+                    
+                    results["step6"] = df_scaled
+                    
+                    # Simpan scaler dan X_columns untuk digunakan nanti
+                    st.session_state.scaler = scaler
+                    st.session_state.X_columns = list(X_before.columns)
+                    
+                    with col2:
+                        st.subheader("📊 Data Sesudah")
+                        
+                        st.write("**Statistik fitur setelah Z-score:**")
+                        st.dataframe(X_scaled.describe().T[['mean', 'std', 'min', 'max']], use_container_width=True)
+                        
+                        # Visualisasi distribusi setelah normalisasi
+                        if len(X_scaled.columns) > 0:
+                            # Pilih fitur yang sama untuk visualisasi
+                            vis_cols = X_scaled.columns[:min(3, len(X_scaled.columns))]
+                            
+                            fig, ax = plt.subplots(figsize=(10, 6))
+                            X_scaled[vis_cols].boxplot(ax=ax)
+                            ax.set_title('Distribusi Fitur Setelah Z-Score')
+                            ax.set_ylabel('Nilai (z-score)')
+                            ax.axhline(y=0, color='r', linestyle='-', alpha=0.3)  # Garis untuk mean=0
+                            plt.tight_layout()
+                            st.pyplot(fig)
+                        
+                        st.dataframe(X_scaled.head(), use_container_width=True)
+                    
+                    st.success(f"✅ Normalisasi Z-score selesai untuk {X_before.shape[1]} fitur")
+                
+                # ===== HASIL AKHIR =====
+                with preprocessing_tabs[6]:
+                    st.subheader("💾 Hasil Akhir Preprocessing")
+                    
+                    # Final result is the last step
+                    final_df = results["step6"]
+                    
+                    # Simpan hasil preprocessing ke session state
+                    st.session_state.df_clean = final_df
+                    st.session_state.TARGET_COL = target_col
+                    st.session_state.trained = False  # Reset status training
+                    
+                    st.success("""
+                    ✅ Preprocessing selesai dan disimpan!
+                    
+                    📊 Preview hasil akhir (fitur & target):
+                    """)
+                    st.dataframe(final_df.head(10), use_container_width=True)
+                    
+                    # Tampilkan statistik akhir
+                    st.subheader("📊 Statistik Data Setelah Preprocessing")
+                    
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        st.metric("Jumlah Fitur", len(final_df.columns) - 1)
+                    with col2:
+                        st.metric("Jumlah Data", len(final_df))
+                    with col3:
+                        if target_col in final_df.columns:
+                            st.metric("Jumlah Kelas Target", final_df[target_col].nunique())
+                    
+                    st.info("👉 Data preprocessing berhasil dilakukan. Silakan lanjut ke tahap '4) Training Model'")
+
+# ================
+# 4) TRAINING MODEL
+# ================
+elif step.startswith("4"):
+    st.title("4) Training Model")
+
+    if st.session_state.df_clean is None:
+        st.warning("Lakukan preprocessing terlebih dahulu di tahap 3.")
+    else:
+        df_final = st.session_state.df_clean
+        TARGET_COL = st.session_state.TARGET_COL
+       # Tambahkan di awal step 4 setelah mendapatkan X dan y (sekitar baris 1009)
+        X = df_final.drop(columns=[TARGET_COL])
+        y = df_final[TARGET_COL].values.astype(int)
+
+        # Di step 4, gunakan parameter untuk train-test split
+        train_size = st.session_state.train_size if "train_size" in st.session_state else 0.8
+        random_state = st.session_state.random_state if "random_state" in st.session_state else 42
+        use_stratify = st.session_state.use_stratify if "use_stratify" in st.session_state else True
+
+        # Lakukan train-test split
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, y,
+            train_size=train_size,
+            random_state=random_state,
+            stratify=y if use_stratify else None
+        )
+
+        # Tampilkan informasi split
+        st.write(f"Data dibagi menjadi {X_train.shape[0]} sampel training ({train_size*100:.0f}%) dan {X_test.shape[0]} sampel testing ({(1-train_size)*100:.0f}%)")
+
+        # Informasi dataset
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Jumlah Sampel", X.shape[0])
+        with col2:
+            st.metric("Jumlah Fitur", X.shape[1])
+        with col3:
+            st.metric("Jumlah Kelas", len(np.unique(y)))
+        
+        st.write("Target classes:", list(st.session_state.label_y.classes_))
+        
+        # Inisialisasi state untuk metrics jika belum ada
+        if "metrics" not in st.session_state:
+            st.session_state.metrics = {}
+        
+        # Inisialisasi state untuk pipelines jika belum ada
+        if "pipelines" not in st.session_state:
+            st.session_state.pipelines = {}
+        
+        # Buat tab untuk setiap model
+        model_tabs = st.tabs(["Decision Tree", "Naive Bayes", "SVM"])
+        
+        # Latih model Decision Tree dan Naive Bayes secara otomatis jika belum dilatih
+        if "Decision Tree" not in st.session_state.pipelines:
+            with st.spinner("Melatih model Decision Tree..."):
+                # Inisialisasi model
+                model_dt = DecisionTreeClassifier(max_depth=6, min_samples_leaf=5, random_state=42)
+                
+                # Evaluasi dengan cross-validation
+                cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+                dt_preds = cross_val_predict(model_dt, X, y, cv=cv, method="predict")
+                
+                # Simpan metrik evaluasi
+                st.session_state.metrics["Decision Tree"] = {
+                    "accuracy": accuracy_score(y, dt_preds),
+                    "f1_macro": f1_score(y, dt_preds, average="macro", zero_division=0),
+                    "report": classification_report(y, dt_preds, zero_division=0, output_dict=True),
+                    "cm": confusion_matrix(y, dt_preds),
+                    "cm_norm": confusion_matrix(y, dt_preds, normalize="true")
+                }
+                
+                # Latih model final
+                model_dt.fit(X, y)
+                st.session_state.pipelines["Decision Tree"] = model_dt
+                
+        if "Naive Bayes" not in st.session_state.pipelines:
+            with st.spinner("Melatih model Naive Bayes..."):
+                # Inisialisasi model
+                model_nb = GaussianNB(var_smoothing=1e-5)
+                
+                # Evaluasi dengan cross-validation
+                cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+                nb_preds = cross_val_predict(model_nb, X, y, cv=cv, method="predict")
+                
+                # Simpan metrik evaluasi
+                st.session_state.metrics["Naive Bayes"] = {
+                    "accuracy": accuracy_score(y, nb_preds),
+                    "f1_macro": f1_score(y, nb_preds, average="macro", zero_division=0),
+                    "report": classification_report(y, nb_preds, zero_division=0, output_dict=True),
+                    "cm": confusion_matrix(y, nb_preds),
+                    "cm_norm": confusion_matrix(y, nb_preds, normalize="true")
+                }
+                
+                # Latih model final
+                model_nb.fit(X, y)
+                st.session_state.pipelines["Naive Bayes"] = model_nb
+        
+        # Set trained flag jika ada model yang sudah dilatih
+        st.session_state.trained = len(st.session_state.pipelines) > 0
+        
+        # Tab Decision Tree
+        with model_tabs[0]:
+            st.subheader("🌳 Decision Tree")
+            
+            if "Decision Tree" in st.session_state.metrics:
+                metrics = st.session_state.metrics["Decision Tree"]
+                
+                # Tampilkan metrik
+                st.markdown(f"### Decision Tree — Akurasi: **{metrics['accuracy']*100:.2f}%** | F1-macro: **{metrics['f1_macro']:.3f}**")
+                
+                # Classification report
+                st.subheader("Laporan Klasifikasi")
+                report_df = pd.DataFrame(metrics["report"]).transpose()
+                st.dataframe(report_df.style.highlight_max(axis=0, subset=["precision", "recall", "f1-score"]))
+                
+                # Tampilkan confusion matrix
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.write("**Confusion Matrix (Raw)**")
+                    fig1, ax1 = plt.subplots(figsize=(8, 6))
+                    target_classes = list(st.session_state.label_y.classes_)
+                    ConfusionMatrixDisplay(metrics["cm"], display_labels=target_classes).plot(ax=ax1, cmap="Blues", values_format='d')
+                    ax1.set_title("Confusion Matrix (Raw) — Decision Tree")
+                    st.pyplot(fig1)
+                
+                with col2:
+                    st.write("**Confusion Matrix (Normalized)**")
+                    fig2, ax2 = plt.subplots(figsize=(8, 6))
+                    ConfusionMatrixDisplay(metrics["cm_norm"], display_labels=target_classes).plot(ax=ax2, cmap="Blues")
+                    ax2.set_title("Confusion Matrix (Normalized) — Decision Tree")
+                    st.pyplot(fig2)
+                
+                # Feature importance untuk Decision Tree
+                st.subheader("Feature Importance")
+                model = st.session_state.pipelines["Decision Tree"]
+                feature_imp = pd.DataFrame({
+                    'Fitur': X.columns,
+                    'Importance': model.feature_importances_
+                }).sort_values('Importance', ascending=False)
+                
+                fig, ax = plt.subplots(figsize=(10, 6))
+                feature_imp.plot(kind='barh', x='Fitur', y='Importance', ax=ax)
+                ax.set_title("Feature Importance")
+                st.pyplot(fig)
+            else:
+                st.info("Decision Tree sedang diproses...")
+        
+        # Tab Naive Bayes
+        with model_tabs[1]:
+            st.subheader("🧠 Naive Bayes")
+            
+            if "Naive Bayes" in st.session_state.metrics:
+                metrics = st.session_state.metrics["Naive Bayes"]
+                
+                # Tampilkan metrik
+                st.markdown(f"### Naive Bayes — Akurasi: **{metrics['accuracy']*100:.2f}%** | F1-macro: **{metrics['f1_macro']:.3f}**")
+                
+                # Classification report
+                st.subheader("Laporan Klasifikasi")
+                report_df = pd.DataFrame(metrics["report"]).transpose()
+                st.dataframe(report_df.style.highlight_max(axis=0, subset=["precision", "recall", "f1-score"]))
+                
+                # Tampilkan confusion matrix
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.write("**Confusion Matrix (Raw)**")
+                    fig1, ax1 = plt.subplots(figsize=(8, 6))
+                    target_classes = list(st.session_state.label_y.classes_)
+                    ConfusionMatrixDisplay(metrics["cm"], display_labels=target_classes).plot(ax=ax1, cmap="Blues", values_format='d')
+                    ax1.set_title("Confusion Matrix (Raw) — Naive Bayes")
+                    st.pyplot(fig1)
+                
+                with col2:
+                    st.write("**Confusion Matrix (Normalized)**")
+                    fig2, ax2 = plt.subplots(figsize=(8, 6))
+                    ConfusionMatrixDisplay(metrics["cm_norm"], display_labels=target_classes).plot(ax=ax2, cmap="Blues")
+                    ax2.set_title("Confusion Matrix (Normalized) — Naive Bayes")
+                    st.pyplot(fig2)
+            else:
+                st.info("Naive Bayes sedang diproses...")
+        
+        # Tab SVM - Kustomisasi dan Training Terpisah
+        with model_tabs[2]:
+            st.subheader("🔧 Support Vector Machine")
+            
+            # Kustomisasi parameter SVM
+            st.subheader("⚙️ Kustomisasi Parameter SVM")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                kernel_type = st.selectbox(
+                    "Kernel SVM",
+                    options=["rbf", "linear", "poly", "sigmoid"],
+                    index=0  # Default: rbf
+                )
+                
+                gamma_option = st.selectbox(
+                    "Gamma",
+                    options=["scale", "auto", "custom"],
+                    index=0  # Default: scale
+                )
+                
+                if gamma_option == "custom":
+                    gamma_value = st.number_input("Nilai Gamma", 
+                                                min_value=0.0001, 
+                                                max_value=100.0, 
+                                                value=0.1, 
+                                                format="%.4f",
+                                                step=0.01)
+                else:
+                    gamma_value = gamma_option
+            
+            with col2:
+                C_value = st.slider("Parameter Regularisasi (C)", 
+                                   min_value=0.1, 
+                                   max_value=10.0, 
+                                   value=1.0,  # Default: 1.0 
+                                   step=0.1)
+                
+                if kernel_type == "poly":
+                    poly_degree = st.slider("Derajat Polinomial", 
+                                           min_value=2, 
+                                           max_value=10, 
+                                           value=3)
+                else:
+                    poly_degree = 3
+            
+            # Buat nama SVM berdasarkan kernel yang dipilih    
+            svm_name = f"SVM ({kernel_type.upper()})"
+            
+            # Cek apakah model SVM dengan kernel ini sudah ada
+            svm_exists = False
+            for name in st.session_state.pipelines.keys():
+                if name.startswith("SVM") and kernel_type.upper() in name:
+                    svm_exists = True
+                    svm_name = name
+                    break
+            
+            # Tombol untuk melatih SVM dengan parameter yang dipilih
+            if not svm_exists:
+                if st.button("🚀 Latih Model SVM", use_container_width=True):
+                    with st.spinner(f"Melatih model {svm_name}..."):
+                        # Buat SVM dengan parameter yang dikustomisasi
+                        if kernel_type == "poly":
+                            model_svm = SVC(
+                                kernel=kernel_type, 
+                                C=C_value, 
+                                gamma=gamma_value, 
+                                degree=poly_degree,
+                                probability=True, 
+                                random_state=42
+                            )
+                        else:
+                            model_svm = SVC(
+                                kernel=kernel_type, 
+                                C=C_value, 
+                                gamma=gamma_value, 
+                                probability=True, 
+                                random_state=42
+                            )
+                        
+                        # Evaluasi dengan cross-validation
+                        cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+                        svm_preds = cross_val_predict(model_svm, X, y, cv=cv, method="predict")
+                        
+                        # Simpan metrik evaluasi
+                        st.session_state.metrics[svm_name] = {
+                            "accuracy": accuracy_score(y, svm_preds),
+                            "f1_macro": f1_score(y, svm_preds, average="macro", zero_division=0),
+                            "report": classification_report(y, svm_preds, zero_division=0, output_dict=True),
+                            "cm": confusion_matrix(y, svm_preds),
+                            "cm_norm": confusion_matrix(y, svm_preds, normalize="true"),
+                            "params": {
+                                "kernel": kernel_type,
+                                "C": C_value,
+                                "gamma": gamma_value,
+                                "degree": poly_degree if kernel_type == "poly" else None
+                            }
+                        }
+                        
+                        # Latih model final
+                        model_svm.fit(X, y)
+                        st.session_state.pipelines[svm_name] = model_svm
+                        
+                        st.success(f"✅ Model {svm_name} berhasil dilatih!")
+                        st.experimental_rerun()  # Reload untuk menampilkan hasil
+            
+            # Cari nama SVM model yang sudah dilatih
+            svm_models = [name for name in st.session_state.metrics.keys() if "SVM" in name]
+            
+            if svm_models:
+                # Pilih model SVM yang akan ditampilkan (jika lebih dari 1)
+                if len(svm_models) > 1:
+                    selected_svm = st.selectbox("Pilih model SVM:", svm_models, index=0)
+                else:
+                    selected_svm = svm_models[0]
+                
+                metrics = st.session_state.metrics[selected_svm]
+                
+                # Tampilkan parameter SVM yang digunakan
+                st.subheader(f"Parameter {selected_svm}")
+                if "params" in metrics:
+                    params = metrics["params"]
+                    st.write(f"- Kernel: {params['kernel']}")
+                    st.write(f"- C: {params['C']}")
+                    st.write(f"- Gamma: {params['gamma']}")
+                    if params['degree'] is not None:
+                        st.write(f"- Degree: {params['degree']}")
+                elif "(" in selected_svm:
+                    kernel_used = selected_svm.split("(")[1].split(")")[0].lower()
+                    st.write(f"- Kernel: {kernel_used}")
+                
+                # Tampilkan metrik
+                st.markdown(f"### {selected_svm} — Akurasi: **{metrics['accuracy']*100:.2f}%** | F1-macro: **{metrics['f1_macro']:.3f}**")
+                
+                # Classification report
+                st.subheader("Laporan Klasifikasi")
+                report_df = pd.DataFrame(metrics["report"]).transpose()
+                st.dataframe(report_df.style.highlight_max(axis=0, subset=["precision", "recall", "f1-score"]))
+                
+                # Tampilkan confusion matrix
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.write("**Confusion Matrix (Raw)**")
+                    fig1, ax1 = plt.subplots(figsize=(8, 6))
+                    target_classes = list(st.session_state.label_y.classes_)
+                    ConfusionMatrixDisplay(metrics["cm"], display_labels=target_classes).plot(ax=ax1, cmap="Blues", values_format='d')
+                    ax1.set_title(f"Confusion Matrix (Raw) — {selected_svm}")
+                    st.pyplot(fig1)
+                
+                with col2:
+                    st.write("**Confusion Matrix (Normalized)**")
+                    fig2, ax2 = plt.subplots(figsize=(8, 6))
+                    ConfusionMatrixDisplay(metrics["cm_norm"], display_labels=target_classes).plot(ax=ax2, cmap="Blues")
+                    ax2.set_title(f"Confusion Matrix (Normalized) — {selected_svm}")
+                    st.pyplot(fig2)
+                
+                # Jika ada model SVM lainnya, tambahkan tombol untuk melatih model SVM baru
+                if not svm_exists:
+                    st.info(f"Anda dapat melatih model SVM baru dengan parameter berbeda menggunakan tombol di atas.")
+                else:
+                    if st.button("🔄 Latih Model SVM Baru dengan Parameter di Atas", use_container_width=True):
+                        # Hapus model SVM yang sudah ada dengan kernel yang sama
+                        if svm_name in st.session_state.pipelines:
+                            del st.session_state.pipelines[svm_name]
+                        if svm_name in st.session_state.metrics:
+                            del st.session_state.metrics[svm_name]
+                        st.experimental_rerun()  # Reload untuk menampilkan form latih model baru
+            else:
+                st.info("Belum ada model SVM yang dilatih. Gunakan panel kustomisasi di atas dan klik 'Latih Model SVM'.")
+
+# ==================
+# 5) TESTING / PREDIKSI
+# ==================
+elif step.startswith("5"):
+    st.title("5) Testing / Prediksi")
+
+    if not st.session_state.trained:
+        st.warning("Latih model dulu di tahap 4.")
+    else:
+        TARGET_COL = st.session_state.TARGET_COL
+        X_columns = st.session_state.X_columns
+        scaler = st.session_state.scaler
+        label_y = st.session_state.label_y
+        models = st.session_state.pipelines
+
+        st.subheader("Masukkan indikator (1 sampel)")
+
+        # Build form inputs sesuai fitur
+        with st.form("input_form"):
+            inputs = {}
+            cols = st.columns(2)
+            for i, col in enumerate(X_columns):
+                with cols[i % 2]:
+                    if col in MANUAL_MAP:  # kategorikal yang dimapping
+                        # tampilkan pilihan human-friendly (keys asli sebelum _norm)
+                        # kita tampilkan opsi 'label' yang umum dipakai
+                        reverse_show = {
+                            "Kerebahan": ["Tahan", "Sedang", "Tidak Tahan"],
+                            "TeksturNasi": ["Pulen", "Agak Pulen", "Agak Pera", "Pera"],
+                            "KetahananTerhadapHama": ["Tahan", "Agak Tahan", "Sedang", "Agak Rentan", "Rentan", "Tidak Tahan"],
+                            "Kerontokan": ["Tahan", "Toleran", "Kuat", "Sedang", "Agak Tahan", "Mudah", "Rentan"],
+                            "WarnaGabah": ["Kuning Bersih", "Kuning Jerami", "Kuning"],
+                        }
+                        pilihan = reverse_show.get(col, list(MANUAL_MAP[col].keys()))
+                        inputs[col] = st.selectbox(col, options=pilihan)
+                    else:
+                        # numerik
+                        default_val = 0.0
+                        if col.lower() in ["phtanah"]: default_val = 5.5
+                        if col.lower() in ["umurtanaman"]: default_val = 115
+                        if col.lower() in ["potensihasil"]: default_val = 5.0
+                        inputs[col] = st.number_input(col, value=float(default_val))
+
+            model_name = st.selectbox("Pilih model", list(models.keys()))
+            show_topk = st.checkbox("Tampilkan Top-3 probabilitas (jika tersedia)", value=True)
+            submitted = st.form_submit_button("🔮 Prediksi")
+
+        def preprocess_input_for_inference(raw_dict, X_columns, scaler):
+            # terapkan mapping manual utk kolom kategori (sama seperti training)
+            row = {}
+            for col in X_columns:
+                if col in MANUAL_MAP:
+                    v = raw_dict.get(col, None)
+                    mapped = MANUAL_MAP[col].get(_norm(v), None)
+                    if mapped is None:
+                        mapped = 0.0
+                    row[col] = float(mapped)
+                else:
+                    val = raw_dict.get(col, 0.0)
+                    if isinstance(val, str):
+                        val = val.replace(",", ".")
+                    try:
+                        row[col] = float(val)
+                    except:
+                        row[col] = 0.0
+            X_one = pd.DataFrame([[row.get(c, 0.0) for c in X_columns]], columns=X_columns)
+            # scale dengan scaler training
+            X_scaled = pd.DataFrame(scaler.transform(X_one), columns=X_columns)
+            return X_scaled
+
+        if submitted:
+            try:
+                X_one = preprocess_input_for_inference(inputs, X_columns, scaler)
+                clf = models[model_name]
+                y_pred = clf.predict(X_one)
+                varietas = label_y.inverse_transform(y_pred)[0]
+                st.success(f"🌾 **Rekomendasi varietas** ({model_name}): **{varietas}**")
+
+                if show_topk and hasattr(clf, "predict_proba"):
+                    proba = clf.predict_proba(X_one)[0]
+                    idx = np.argsort(proba)[::-1][:3]
+                    st.write("Top-3 keyakinan model:")
+                    for i in idx:
+                        st.write(f"- {label_y.inverse_transform([i])[0]} — {proba[i]*100:.2f}%")
+
+                st.subheader("Preview input (setelah preprocessing & scaling)")
+                st.dataframe(X_one, use_container_width=True)
+
+            except Exception as e:
+                st.error(f"Gagal prediksi: {e}")
