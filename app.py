@@ -287,8 +287,7 @@ elif page == "ℹ️ Informasi Data":
         st.markdown("### 🔎 Pemeriksaan Cepat Data")
         st.info("Catatan: pemeriksaan di bawah hanya bersifat informasional dan TIDAK mengubah dataset Anda. Untuk tindakan pembersihan, gunakan halaman 'Preprocessing & Encoding'.")
 
-        dup_count = int(df.duplicated().sum())
-        st.write(f"**Duplikat baris:** {dup_count}")
+    # Duplikat tidak ditampilkan di sini (halaman Informasi hanya bersifat informasional)
 
         missing_pct = (df.isnull().mean() * 100).sort_values(ascending=False)
         missing_df = missing_pct[missing_pct > 0].to_frame(name="Missing (%)")
@@ -399,6 +398,14 @@ elif page == "🔧 Preprocessing & Encoding":
         
         # Step 1: Data Cleaning
         st.markdown("#### 🧹 Tahap 1: Pembersihan Data")
+        st.markdown(
+            """
+            **Penjelasan:**
+            - Pada tahap ini, kolom yang tidak bersifat prediktif (mis. ID, nama, alamat, tahun) akan dihapus otomatis.
+            - Tujuan: mengurangi noise dan kolom yang tidak relevan agar model fokus pada fitur yang bermakna.
+            - Hasil: dataset baru tanpa kolom yang di-drop akan disimpan sementara di sesi (tidak menimpa file asli).
+            """
+        )
         
         if st.button("🧹 Mulai Pembersihan Data"):
             with st.spinner("Membersihkan data..."):
@@ -439,6 +446,14 @@ elif page == "🔧 Preprocessing & Encoding":
         # Step 2: Handle Missing Values
         if 'df_step1' in st.session_state:
             st.markdown("#### 🔍 Tahap 2: Penanganan Nilai Hilang")
+            st.markdown(
+                """
+                **Penjelasan:**
+                - Numerik: nilai kosong akan diisi menggunakan *median* kolom (lebih tahan terhadap outlier).
+                - Kategorikal: nilai kosong diisi dengan *mode* (nilai yang paling sering muncul) jika tersedia.
+                - Catatan: ini adalah strategi sederhana. Untuk dataset dengan missing banyak, pertimbangkan metode imputasi lebih canggih atau pemeriksaan sumber data.
+                """
+            )
             
             if st.button("🔄 Tangani Nilai Hilang"):
                 with st.spinner("Menangani nilai hilang..."):
@@ -494,6 +509,15 @@ elif page == "🔧 Preprocessing & Encoding":
         # Step 3: Feature Encoding
         if 'df_step2' in st.session_state:
             st.markdown("#### 🔢 Tahap 3: Encoding Fitur")
+            st.markdown(
+                """
+                **Penjelasan:**
+                - Mengubah fitur kategorikal menjadi representasi numerik yang bisa diproses model.
+                - Beberapa kolom di-encode menggunakan peta manual (mis. `Kerebahan`, `TeksturNasi`) untuk menjaga interpretabilitas.
+                - Target (varietas) di-*label encode* sehingga setiap kelas mendapat angka integer.
+                - Jika ada nilai yang tidak cocok dengan peta manual, aplikasi akan menandainya agar Anda review.
+                """
+            )
             
             if st.button("🔄 Mulai Encoding"):
                 with st.spinner("Melakukan encoding data..."):
@@ -602,6 +626,14 @@ elif page == "🔧 Preprocessing & Encoding":
         # Step 4: Feature Scaling
         if 'X_encoded' in st.session_state and 'y_encoded' in st.session_state:
             st.markdown("#### 📏 Tahap 4: Scaling Fitur")
+            st.markdown(
+                """
+                **Penjelasan:**
+                - Scaling menstandarisasi fitur numerik sehingga memiliki mean=0 dan variance=1 (menggunakan StandardScaler).
+                - Berguna terutama untuk model yang sensitif terhadap skala fitur (mis. SVM).
+                - Hasil scaler akan disimpan di `preprocess_artifacts.pkl` untuk digunakan saat prediksi.
+                """
+            )
             
             if st.button("📏 Mulai Scaling"):
                 with st.spinner("Melakukan scaling fitur..."):
@@ -653,6 +685,23 @@ elif page == "🔧 Preprocessing & Encoding":
 elif page == "🤖 Training Model":
     st.markdown('<h2 class="sub-header">🤖 Training Model Machine Learning</h2>', unsafe_allow_html=True)
     
+    # Short explanation for users
+    st.markdown(
+        """
+        **Penjelasan singkat halaman Training:**
+
+        - Halaman ini melatih model-machine learning menggunakan data yang sudah diproses (scaling & encoding).
+        - Anda dapat memilih beberapa model sekaligus (Decision Tree, Gaussian NB, SVM RBF).
+        - Cross-validation dilakukan berulang (repeated holdout) berdasarkan pengaturan 'Jumlah Repetisi' dan 'Ukuran Test Set' untuk memperkirakan performa yang stabil.
+        - Untuk SVM, tersedia opsi untuk memakai Grid Search atau parameter rekomendasi (lebih cepat).
+        - Metrik yang dihitung: Accuracy, Precision, Recall, F1 (macro). Confusion matrix akan ditampilkan untuk analisis lebih lanjut.
+        - Selama training, data duplikat pada fitur+target dihapus otomatis (readable info ditampilkan jika ada).
+        - Hasil training (model final, best params, preprocessing artifacts) disimpan sebagai file `.joblib` dan metrik disimpan di sesi untuk diperiksa di halaman Testing/Prediksi.
+        - Perhatian: training dengan banyak repetisi dan grid search dapat memakan waktu. Untuk percobaan cepat, turunkan nilai repetisi atau non-aktifkan grid search.
+        """,
+        unsafe_allow_html=True,
+    )
+
     if 'preprocessing_complete' not in st.session_state or not st.session_state.get('preprocessing_complete', False):
         st.warning("⚠️ Silakan selesaikan preprocessing data terlebih dahulu di halaman 'Preprocessing & Encoding'")
     else:
