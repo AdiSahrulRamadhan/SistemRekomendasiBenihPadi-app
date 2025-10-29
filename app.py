@@ -19,7 +19,7 @@ warnings.filterwarnings("ignore")
 
 # Set page config
 st.set_page_config(
-    page_title="Prediksi Varietas Padi",
+    page_title="Sistem Rekomendasi Benih Padi",
     page_icon="🌾",
     layout="wide",
     initial_sidebar_state="expanded"
