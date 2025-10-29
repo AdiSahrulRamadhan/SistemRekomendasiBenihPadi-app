@@ -1494,7 +1494,7 @@ elif page == "🔮 Testing/Prediksi":
                 
                 # Consensus voting
                 if len(predictions) > 1:
-                    st.markdown("### 🗳️ Konsensus Model")
+                    st.markdown("### 🗳️ Hasil Prediksi Semua Model")
                     
                     # Count votes
                     from collections import Counter
@@ -1508,7 +1508,7 @@ elif page == "🔮 Testing/Prediksi":
                         if vote_count > len(predictions) // 2:
                             st.markdown(f"""
                             <div style="background: linear-gradient(135deg, #FFD700, #FFA500); padding: 2rem; border-radius: 1rem; text-align: center; margin: 1rem 0; box-shadow: 0 6px 12px rgba(0,0,0,0.15);">
-                                <h3 style="color: #8B4513; margin: 0;">🏆 Prediksi Konsensus</h3>
+                                <h3 style="color: #8B4513; margin: 0;">🏆 Hasil Prediksi</h3>
                                 <h1 style="color: #8B0000; margin: 0.5rem 0; font-size: 2.5rem;">{winner}</h1>
                                 <p style="color: #8B4513; margin: 0; font-size: 1.1rem;">Dipilih oleh {vote_count} dari {len(predictions)} model</p>
                             </div>
