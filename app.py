@@ -1385,7 +1385,7 @@ elif page == "🔮 Testing/Prediksi":
                     predictions = {}
                     all_predictions = {}  # For top 3 predictions
                     
-                    st.markdown("### 🎯 Hasil Prediksi")
+                    st.markdown("### 🎯 Rekomendasi Benih Padi")
                     
                     for model_name, model in fresh_models.items():
                         if model is None:
@@ -1458,7 +1458,7 @@ elif page == "🔮 Testing/Prediksi":
                                 """, unsafe_allow_html=True)
                     
                     # Summary of top predictions
-                    st.markdown("### 📋 Ringkasan Prediksi Utama")
+                    st.markdown("### 📋 Ringkasan Rekomendasi Utama")
                     summary_data = []
                     for model_name, pred_list in all_predictions.items():
                         if "decision_tree" in model_name.lower():
@@ -1470,12 +1470,12 @@ elif page == "🔮 Testing/Prediksi":
                         else:
                             display_name = model_name.title()
                             
-                        if pred_list[0][0]:  # If there's a prediction
-                            summary_data.append({
-                                "Model": display_name,
-                                "Prediksi Utama": pred_list[0][0],
-                                "Confidence": f"{pred_list[0][1]:.1f}%"
-                            })
+                            if pred_list[0][0]:  # If there's a prediction
+                                summary_data.append({
+                                    "Model": display_name,
+                                    "Rekomendasi Utama": pred_list[0][0],
+                                    "Confidence": f"{pred_list[0][1]:.1f}%"
+                                })
                     
                     if summary_data:
                         summary_df = pd.DataFrame(summary_data)
@@ -1487,14 +1487,14 @@ elif page == "🔮 Testing/Prediksi":
                     if len(unique_predictions) > 1:
                         st.success(f"✅ Keragaman tercapai! Ditemukan {len(unique_predictions)} varietas berbeda: {', '.join(sorted(unique_predictions))}")
                     else:
-                        st.warning(f"⚠️ Semua model memprediksi varietas yang sama: {list(unique_predictions)[0] if unique_predictions else 'Tidak ada'}")
+                        st.warning(f"⚠️ Semua model merekomendasikan varietas yang sama: {list(unique_predictions)[0] if unique_predictions else 'Tidak ada'}")
                         
                 except Exception as e:
                     st.error(f"❌ Terjadi kesalahan dalam prediksi: {str(e)}")
                 
                 # Consensus voting
                 if len(predictions) > 1:
-                    st.markdown("### 🗳️ Hasil Prediksi Semua Model")
+                    st.markdown("### 🗳️ Rekomendasi Semua Model")
                     
                     # Count votes
                     from collections import Counter
@@ -1508,7 +1508,7 @@ elif page == "🔮 Testing/Prediksi":
                         if vote_count > len(predictions) // 2:
                             st.markdown(f"""
                             <div style="background: linear-gradient(135deg, #FFD700, #FFA500); padding: 2rem; border-radius: 1rem; text-align: center; margin: 1rem 0; box-shadow: 0 6px 12px rgba(0,0,0,0.15);">
-                                <h3 style="color: #8B4513; margin: 0;">🏆 Hasil Prediksi</h3>
+                                <h3 style="color: #8B4513; margin: 0;">🏆 Rekomendasi Padi</h3>
                                 <h1 style="color: #8B0000; margin: 0.5rem 0; font-size: 2.5rem;">{winner}</h1>
                                 <p style="color: #8B4513; margin: 0; font-size: 1.1rem;">Dipilih oleh {vote_count} dari {len(predictions)} model</p>
                             </div>
@@ -1516,7 +1516,7 @@ elif page == "🔮 Testing/Prediksi":
                         else:
                             st.markdown(f"""
                             <div style="background: linear-gradient(135deg, #87CEEB, #4682B4); padding: 2rem; border-radius: 1rem; text-align: center; margin: 1rem 0;">
-                                <h3 style="color: white; margin: 0;">🤝 Prediksi Mayoritas</h3>
+                                <h3 style="color: white; margin: 0;">🤝 Rekomendasi Mayoritas</h3>
                                 <h1 style="color: #FFD700; margin: 0.5rem 0; font-size: 2.5rem;">{winner}</h1>
                                 <p style="color: white; margin: 0; font-size: 1.1rem;">Dipilih oleh {vote_count} dari {len(predictions)} model</p>
                             </div>
