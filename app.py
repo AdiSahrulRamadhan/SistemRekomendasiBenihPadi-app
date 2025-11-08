@@ -267,27 +267,36 @@ elif page == "ℹ️ Informasi Data":
         buffer = []
         for col in df.columns:
             dtype = str(df[col].dtype)
-            null_count = df[col].isnull().sum()
-            unique_count = df[col].nunique()
+            null_count = int(df[col].isnull().sum())
+            unique_count = int(df[col].nunique())
             buffer.append({
                 'Kolom': col,
                 'Tipe Data': dtype,
                 'Nilai Kosong': null_count,
                 'Nilai Unik': unique_count
             })
-        
-        info_df = pd.DataFrame(buffer)
-        st.dataframe(info_df, use_container_width=True)
-        
-        # Statistical description
-        st.markdown("### 📈 Statistik Deskriptif")
-        st.dataframe(df.describe(include='all'))
 
-        # Quick diagnostics: duplicates, missing percentages, high-cardinality
+        info_df = pd.DataFrame(buffer)
+
+        # Show info table full width (not side-by-side)
+        st.dataframe(info_df, use_container_width=True)
+
+        # Statistical description (full)
+        st.markdown("### 📈 Statistik Deskriptif (Semua Kolom)")
+        st.dataframe(df.describe(include='all'), use_container_width=True)
+
+        # Option to show entire dataset (user requested full view)
+        show_all = st.checkbox("Tampilkan seluruh dataset (hati-hati: bisa lambat untuk dataset besar)", value=False)
+        if show_all:
+            st.markdown("#### 📂 Seluruh Dataset")
+            st.dataframe(df, use_container_width=True)
+        else:
+            st.markdown("#### 📂 Pratinjau Dataset (20 baris) — centang untuk melihat semua")
+            st.dataframe(df.head(20), use_container_width=True)
+
+        # Quick diagnostics: missing percentages, high-cardinality
         st.markdown("### 🔎 Pemeriksaan Cepat Data")
         st.info("Catatan: pemeriksaan di bawah hanya bersifat informasional dan TIDAK mengubah dataset Anda. Untuk tindakan pembersihan, gunakan halaman 'Preprocessing & Encoding'.")
-
-    # Duplikat tidak ditampilkan di sini (halaman Informasi hanya bersifat informasional)
 
         missing_pct = (df.isnull().mean() * 100).sort_values(ascending=False)
         missing_df = missing_pct[missing_pct > 0].to_frame(name="Missing (%)")
@@ -327,59 +336,107 @@ elif page == "ℹ️ Informasi Data":
                 - **Nilai Kosong**: Jumlah nilai kosong per kolom. Jika banyak, pertimbangkan imputasi atau penghapusan kolom/row.
                 - **Nilai Unik**: Banyaknya nilai unik per kolom. Kolom kategorikal dengan nilai unik sangat banyak perlu penanganan khusus (high-cardinality).
                 - **Statistik Deskriptif**: Rangkuman (mean, std, min, max) untuk kolom numerik dan ringkasan untuk kategorikal.
-                - **Pemeriksaan Cepat**: Ringkasan duplikat, kolom dengan missing besar, high-cardinality, dan saran kolom target yang terdeteksi otomatis.
+                - **Pemeriksaan Cepat**: Ringkasan missing, high-cardinality, dan saran kolom target yang terdeteksi otomatis.
                 """,
                 unsafe_allow_html=True,
             )
-        
-        # Data visualization
+
+        # Data visualization: Line chart and Bar chart
         st.markdown("### 📊 Visualisasi Data")
-        
+
         # Find relevant columns
         tahun_col = find_col(df, "tahun", "Tahun")
         varietas_col = find_col(df, "varietasbenihpadi", "VarietasBenihPadi")
         potensi_col = find_col(df, "potensihasil", "PotensiHasil")
-        
-        viz_col1, viz_col2 = st.columns(2)
-        
-        with viz_col1:
-            # Boxplot tahun vs potensi hasil
-            if tahun_col and potensi_col:
-                st.markdown("#### Sebaran Potensi Hasil per Tahun")
-                fig, ax = plt.subplots(figsize=(10, 6))
-                sns.boxplot(data=df, x=tahun_col, y=potensi_col, ax=ax)
-                ax.set_title("Sebaran Potensi Hasil Padi per Tahun")
-                plt.xticks(rotation=45)
-                plt.tight_layout()
-                st.pyplot(fig)
-            else:
-                st.warning("⚠️ Kolom 'tahun' atau 'potensihasil' tidak ditemukan")
-        
-        with viz_col2:
-            # Bar chart varietas vs potensi hasil
-            if varietas_col and potensi_col:
-                st.markdown("#### Rata-rata Potensi Hasil per Varietas")
-                fig, ax = plt.subplots(figsize=(12, 6))
-                avg_data = df.groupby(varietas_col)[potensi_col].mean().sort_values(ascending=False)
-                avg_data.plot(kind="bar", ax=ax)
-                ax.set_title("Rata-Rata Potensi Hasil Berdasarkan Varietas")
+
+        # Line chart: rata-rata per tahun (jika kolom tahun tersedia)
+        if tahun_col and potensi_col:
+            st.markdown("#### 📈 Grafik Garis — Rata-rata Potensi Hasil per Tahun")
+            try:
+                avg_per_year = df.groupby(tahun_col)[potensi_col].mean().sort_index()
+                fig, ax = plt.subplots(figsize=(10, 5))
+                ax.plot(avg_per_year.index.astype(str), avg_per_year.values, marker='o', linestyle='-')
+                ax.set_title('Rata-rata Potensi Hasil per Tahun')
+                ax.set_xlabel(tahun_col)
                 ax.set_ylabel(potensi_col)
                 plt.xticks(rotation=45)
+                plt.grid(alpha=0.3)
                 plt.tight_layout()
                 st.pyplot(fig)
-            else:
-                st.warning("⚠️ Kolom varietas atau potensi hasil tidak ditemukan")
-        
-        # Correlation heatmap
+            except Exception as e:
+                st.warning(f"Tidak dapat membuat grafik garis: {e}")
+        else:
+            st.info("Kolom 'tahun' atau 'potensihasil' tidak lengkap untuk membuat grafik garis")
+
+        # Bar chart: rata-rata potensi per varietas
+        if varietas_col and potensi_col:
+            st.markdown("#### 📊 Grafik Batang — Rata-rata Potensi Hasil per Varietas")
+            try:
+                avg_data = df.groupby(varietas_col)[potensi_col].mean().sort_values(ascending=False)
+                fig, ax = plt.subplots(figsize=(12, 6))
+                sns.barplot(x=avg_data.values, y=avg_data.index, palette='viridis', ax=ax)
+                ax.set_title('Rata-Rata Potensi Hasil Berdasarkan Varietas')
+                ax.set_xlabel(potensi_col)
+                ax.set_ylabel(varietas_col)
+                plt.tight_layout()
+                st.pyplot(fig)
+            except Exception as e:
+                st.warning(f"Tidak dapat membuat grafik batang: {e}")
+        else:
+            st.info("Kolom varietas atau potensi hasil tidak ditemukan untuk grafik batang")
+
+        # Correlation heatmap with explanation and example calculation
         num_df = df.select_dtypes(include="number")
         if num_df.shape[1] >= 2:
-            st.markdown("#### Korelasi Antar Variabel Numerik")
+            st.markdown("#### 🔗 Korelasi Antar Variabel Numerik")
+            st.markdown(
+                "Korelasi Pearson mengukur kekuatan dan arah hubungan linear antara dua variabel numerik. Rumusnya:"
+            )
+            st.latex(r"r = \frac{\sum_{i=1}^n (x_i - \bar{x})(y_i - \bar{y})}{\sqrt{\sum_{i=1}^n (x_i - \bar{x})^2} \sqrt{\sum_{i=1}^n (y_i - \bar{y})^2}}")
+            st.markdown(
+                "Berikut contoh perhitungan Pearson antara dua kolom numerik (dipilih otomatis jika ada `UmurTanaman` dan `PotensiHasil`, atau kolom numerik pertama lainnya):"
+            )
+
+            # Determine example columns
+            ex_cols = []
+            if 'UmurTanaman' in num_df.columns and 'PotensiHasil' in num_df.columns:
+                ex_cols = ['UmurTanaman', 'PotensiHasil']
+            else:
+                ex_cols = list(num_df.columns[:2])
+
+            x = num_df[ex_cols[0]].dropna().astype(float)
+            y = num_df[ex_cols[1]].dropna().astype(float)
+            # align indices
+            xy = pd.concat([x, y], axis=1).dropna()
+            x = xy[ex_cols[0]]
+            y = xy[ex_cols[1]]
+
+            if len(x) >= 2:
+                mean_x = x.mean()
+                mean_y = y.mean()
+                cov_xy = ((x - mean_x) * (y - mean_y)).sum()
+                std_x = x.std(ddof=0)
+                std_y = y.std(ddof=0)
+                pearson_r = cov_xy / (len(x) * std_x * std_y) if (std_x > 0 and std_y > 0) else np.nan
+
+                st.markdown(f"**Contoh kolom:** {ex_cols[0]} dan {ex_cols[1]}")
+                st.write(f"Mean {ex_cols[0]} = {mean_x:.3f}, Mean {ex_cols[1]} = {mean_y:.3f}")
+                st.write(f"Covariance (sum of (x-mean)(y-mean)) = {cov_xy:.3f}")
+                st.write(f"Std {ex_cols[0]} = {std_x:.3f}, Std {ex_cols[1]} = {std_y:.3f}")
+                st.write(f"Pearson r ≈ {pearson_r:.3f}")
+            else:
+                st.info("Tidak cukup data numerik untuk contoh perhitungan korelasi.")
+
+            # Heatmap
             fig, ax = plt.subplots(figsize=(10, 8))
-            sns.heatmap(num_df.corr(), annot=True, cmap="coolwarm", ax=ax)
-            ax.set_title("Korelasi Antar Variabel Numerik")
+            corr = num_df.corr()
+            sns.heatmap(corr, annot=True, cmap="coolwarm", ax=ax)
+            ax.set_title("Korelasi Antar Variabel Numerik (Pearson)")
             plt.tight_layout()
             st.pyplot(fig)
-        
+        else:
+            st.info("Tidak ada cukup kolom numerik untuk menghitung korelasi")
+
         st.info("✅ Analisis data selesai! Lanjutkan ke tahap 'Preprocessing & Encoding' untuk mempersiapkan data.")
 
 # Page 3: Preprocessing & Encoding
