@@ -468,37 +468,93 @@ elif page == "🔧 Preprocessing & Encoding":
             with st.spinner("Membersihkan data..."):
                 # Show before
                 st.markdown("##### 📊 Data Sebelum Pembersihan:")
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.write(f"**Jumlah baris:** {df.shape[0]}")
-                    st.write(f"**Jumlah kolom:** {df.shape[1]}")
-                    st.dataframe(df.head(3))
-                
-                with col2:
-                    st.write("**Kolom yang akan dihapus:**")
-                    drop_cols = ["No", "NamaLengkap", "AsalDesa", "AsalKecamatan", "Tahun"]
-                    drop_cols_exist = [c for c in drop_cols if c in df.columns]
-                    st.write(drop_cols_exist)
-                
+                st.write(f"**Jumlah baris:** {df.shape[0]}")
+                st.write(f"**Jumlah kolom:** {df.shape[1]}")
+
+                # Tampilkan seluruh data sebelum pembersihan (user minta tampil semua)
+                st.markdown("#### Data Sebelum Pembersihan (seluruhnya)")
+                st.dataframe(df, use_container_width=True)
+
+                # Columns to drop
+                st.write("**Kolom yang akan dihapus (deteksi otomatis):**")
+                drop_cols = ["No", "NamaLengkap", "AsalDesa", "AsalKecamatan", "Tahun"]
+                drop_cols_exist = [c for c in drop_cols if c in df.columns]
+                st.write(drop_cols_exist)
+
                 # Drop non-predictive columns
                 df_clean = df.drop(columns=drop_cols_exist)
-                
+
                 # Show after
                 st.markdown("##### ✅ Data Setelah Pembersihan:")
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.write(f"**Jumlah baris:** {df_clean.shape[0]}")
-                    st.write(f"**Jumlah kolom:** {df_clean.shape[1]}")
-                    st.dataframe(df_clean.head(3))
-                
-                with col2:
-                    st.write("**Kolom yang berhasil dihapus:**")
-                    st.write(drop_cols_exist)
-                    st.success(f"Berhasil menghapus {len(drop_cols_exist)} kolom")
-                
+                st.write(f"**Jumlah baris:** {df_clean.shape[0]}")
+                st.write(f"**Jumlah kolom:** {df_clean.shape[1]}")
+
+                st.markdown("#### Data Setelah Pembersihan (seluruhnya)")
+                st.dataframe(df_clean, use_container_width=True)
+
+                # Perbedaan ringkas sebelum vs setelah (kolom yang dihapus)
+                removed_cols = [c for c in df.columns if c not in df_clean.columns]
+                st.markdown("#### Perbedaan setelah pembersihan")
+                st.write(f"Jumlah baris: sebelum={df.shape[0]}, setelah={df_clean.shape[0]}")
+                st.write(f"Jumlah kolom: sebelum={df.shape[1]}, setelah={df_clean.shape[1]}")
+                if removed_cols:
+                    st.write("Kolom yang dihapus:")
+                    st.dataframe(pd.DataFrame({'KolomDihapus': removed_cols}), use_container_width=True)
+                else:
+                    st.write("Tidak ada kolom yang dihapus saat pembersihan.")
+
+                st.write("**Kolom yang berhasil dihapus:**")
+                st.write(drop_cols_exist)
+                st.success(f"Berhasil menghapus {len(drop_cols_exist)} kolom")
+
+                # Ringkasan perubahan — mengapa kolom dihapus
+                st.markdown("#### Mengapa kolom-kolom tersebut dihapus?")
+                reasons = {
+                    'No': 'Kolom indeks/nomor baris — biasanya tidak bersifat prediktif (identifier).',
+                    'NamaLengkap': 'Informasi pribadi — berisiko terkait privasi dan tidak membantu model generalisasi.',
+                    'AsalDesa': 'Informasi lokasi granular — dapat menyebabkan data leakage atau high-cardinality jika tidak dikelompokkan.',
+                    'AsalKecamatan': 'Informasi lokasi granular — dapat menyebabkan data leakage atau high-cardinality jika tidak dikelompokkan.',
+                    'Tahun': 'Jika tidak relevan untuk prediksi saat ini, kolom tahun bisa menambah noise (atau perlu diproses terpisah).'
+                }
+
+                removed_cols = [c for c in df.columns if c not in df_clean.columns]
+                if removed_cols:
+                    rows = []
+                    for c in removed_cols:
+                        rows.append({'Kolom': c, 'AlasanDihapus': reasons.get(c, 'Dihapus karena dianggap tidak prediktif atau berisiko (default).')})
+                    st.dataframe(pd.DataFrame(rows), use_container_width=True)
+                else:
+                    st.write('Tidak ada kolom yang dihapus saat pembersihan.')
+
+                st.markdown("**Catatan:** Jika Anda ingin mempertahankan kolom tertentu, silakan ubah nama kolom agar tidak terdeteksi atau lakukan pembersihan manual di luar aplikasi sebelum mengunggah kembali.")
+
                 # Save to session state
                 st.session_state['df_step1'] = df_clean
                 st.success("✅ Tahap 1 selesai!")
+        # Jika step1 sudah dijalankan pada sesi sebelumnya, tampilkan ringkasan-nya agar tidak 'tertutup'
+        if 'df_step1' in st.session_state:
+            df_clean_saved = st.session_state['df_step1']
+            st.markdown("---")
+            st.markdown("#### Hasil Pembersihan (disimpan dalam sesi)")
+            st.write(f"**Jumlah baris:** {df_clean_saved.shape[0]}  —  **Jumlah kolom:** {df_clean_saved.shape[1]}")
+            removed_cols = [c for c in df.columns if c not in df_clean_saved.columns]
+            if removed_cols:
+                st.write("Kolom yang dihapus:")
+                st.dataframe(pd.DataFrame({'KolomDihapus': removed_cols}), use_container_width=True)
+                # Show reasons if any
+                reasons = {
+                    'No': 'Kolom indeks/nomor baris — biasanya tidak bersifat prediktif (identifier).',
+                    'NamaLengkap': 'Informasi pribadi — berisiko terkait privasi dan tidak membantu model generalisasi.',
+                    'AsalDesa': 'Informasi lokasi granular — dapat menyebabkan data leakage atau high-cardinality jika tidak dikelompokkan.',
+                    'AsalKecamatan': 'Informasi lokasi granular — dapat menyebabkan data leakage atau high-cardinality jika tidak dikelompokkan.',
+                    'Tahun': 'Jika tidak relevan untuk prediksi saat ini, kolom tahun bisa menambah noise (atau perlu diproses terpisah).'
+                }
+                rows = []
+                for c in removed_cols:
+                    rows.append({'Kolom': c, 'AlasanDihapus': reasons.get(c, 'Dihapus karena dianggap tidak prediktif atau berisiko (default).')})
+                st.dataframe(pd.DataFrame(rows), use_container_width=True)
+            else:
+                st.write('Tidak ada kolom yang dihapus saat pembersihan.')
         
         # Step 2: Handle Missing Values
         if 'df_step1' in st.session_state:
@@ -515,53 +571,111 @@ elif page == "🔧 Preprocessing & Encoding":
             if st.button("🔄 Tangani Nilai Hilang"):
                 with st.spinner("Menangani nilai hilang..."):
                     df_step1 = st.session_state['df_step1'].copy()
-                    
+
                     # Show before
                     st.markdown("##### 📊 Sebelum Penanganan Nilai Hilang:")
                     missing_before = df_step1.isnull().sum()
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        st.write("**Missing values per kolom:**")
-                        if missing_before.sum() > 0:
-                            st.dataframe(missing_before[missing_before > 0])
-                        else:
-                            st.write("Tidak ada nilai hilang")
-                    
-                    with col2:
-                        st.write(f"**Total missing values:** {missing_before.sum()}")
-                    
+                    st.write(f"**Total missing values:** {int(missing_before.sum())}")
+                    st.markdown("#### Data Sebelum Imputasi (seluruhnya)")
+                    st.dataframe(df_step1, use_container_width=True)
+
+                    st.markdown("**Missing per kolom (sebelum):**")
+                    if missing_before.sum() > 0:
+                        st.dataframe(missing_before[missing_before > 0].to_frame(name='Missing Count'), use_container_width=True)
+                    else:
+                        st.write("Tidak ada nilai hilang")
+
+                    # Penjelasan rumus imputasi yang digunakan
+                    st.markdown("#### Rumus & Penjelasan Imputasi")
+                    st.markdown("- Numerik: digunakan **median** kolom. Median adalah nilai tengah setelah data diurutkan. Formula (untuk sampel n ganjil):")
+                    st.latex(r"\text{median}(x) = x_{(\frac{n+1}{2})}")
+                    st.markdown("Jika n genap, median adalah rata-rata dua nilai tengah.")
+                    st.markdown("- Kategorikal: digunakan **mode** (nilai yang paling sering muncul). Mode dapat didefinisikan sebagai argmax frekuensi: `mode = argmax_v count(v)`.")
+
                     # Handle missing values
                     df_step2 = df_step1.copy()
-                    
-                    # Fill missing values for numeric columns
+
+                    # Fill missing values for numeric columns using median
                     for col in df_step2.select_dtypes(include="number").columns:
                         if df_step2[col].isnull().sum() > 0:
                             df_step2[col].fillna(df_step2[col].median(), inplace=True)
-                    
-                    # Fill missing values for categorical columns
+
+                    # Fill missing values for categorical columns using mode
                     for col in df_step2.select_dtypes(exclude="number").columns:
                         if df_step2[col].isnull().sum() > 0 and len(df_step2[col].mode()) > 0:
-                            df_step2[col].fillna(df_step2.col.mode()[0], inplace=True)
-                    
+                            try:
+                                df_step2[col].fillna(df_step2[col].mode()[0], inplace=True)
+                            except Exception:
+                                pass
+
                     # Show after
                     st.markdown("##### ✅ Setelah Penanganan Nilai Hilang:")
                     missing_after = df_step2.isnull().sum()
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        st.write("**Missing values per kolom:**")
-                        if missing_after.sum() > 0:
-                            st.dataframe(missing_after[missing_after > 0])
-                        else:
-                            st.write("Tidak ada nilai hilang")
-                    
-                    with col2:
-                        st.write(f"**Total missing values:** {missing_after.sum()}")
-                        if missing_before.sum() > 0:
-                            st.success(f"Berhasil menangani {missing_before.sum()} nilai hilang")
-                    
+                    st.write(f"**Total missing values:** {int(missing_after.sum())}")
+                    st.markdown("#### Data Setelah Imputasi (seluruhnya)")
+                    st.dataframe(df_step2, use_container_width=True)
+
+                    # Buat tabel perbedaan imputasi: baris & kolom yang diisi
+                    imputed_mask = df_step1.isnull() & ~df_step2.isnull()
+                    imputed_locs = imputed_mask.stack()[lambda s: s].index.tolist()
+                    if imputed_locs:
+                        records = []
+                        for idx, col in imputed_locs:
+                            before_val = df_step1.at[idx, col] if col in df_step1.columns else np.nan
+                            after_val = df_step2.at[idx, col] if col in df_step2.columns else np.nan
+                            records.append({'index': idx, 'column': col, 'before': before_val, 'after': after_val})
+                        imputed_df = pd.DataFrame(records)
+                        st.markdown("#### Rincian Nilai yang Diimputasi")
+                        st.dataframe(imputed_df, use_container_width=True)
+                    else:
+                        st.write("Tidak ada nilai yang diimputasi pada langkah ini.")
+
+                    if missing_before.sum() > 0:
+                        st.success(f"Berhasil menangani {int(missing_before.sum())} nilai hilang")
+
+                    # Plots: missing before/after
+                    try:
+                        fig, ax = plt.subplots(1, 2, figsize=(14, 4))
+                        (missing_before[missing_before > 0]).sort_values(ascending=False).plot(kind='bar', ax=ax[0], color='C3')
+                        ax[0].set_title('Missing per Kolom (sebelum)')
+                        (missing_after[missing_after > 0]).sort_values(ascending=False).plot(kind='bar', ax=ax[1], color='C2')
+                        ax[1].set_title('Missing per Kolom (sesudah)')
+                        plt.tight_layout()
+                        st.pyplot(fig)
+                    except Exception:
+                        pass
+
+                    st.markdown("**Penjelasan:** Numerik diisi dengan median (tahan terhadap outlier). Kategorikal diisi dengan mode (nilai terbanyak). Strategi ini sederhana dan cepat; jika banyak missing, pertimbangkan teknik imputasi lanjutan.")
+
                     # Save to session state
                     st.session_state['df_step2'] = df_step2
                     st.success("✅ Tahap 2 selesai!")
+        # Jika step2 sudah ada di session, tampilkan ringkasan agar tidak tertutup
+        if 'df_step2' in st.session_state:
+            df_before = st.session_state.get('df_step1', None)
+            df_after = st.session_state['df_step2']
+            st.markdown("---")
+            st.markdown("#### Hasil Imputasi (disimpan dalam sesi)")
+            if df_before is not None:
+                missing_before = df_before.isnull().sum()
+                st.write(f"**Total missing sebelum:** {int(missing_before.sum())}")
+            missing_after = df_after.isnull().sum()
+            st.write(f"**Total missing setelah:** {int(missing_after.sum())}")
+            # Tampilkan ringkasan kolom yang diimputasi dan contoh nilai
+            imputed_mask = (df_before.isnull() & ~df_after.isnull()) if df_before is not None else None
+            if imputed_mask is not None:
+                imputed_locs = imputed_mask.stack()[lambda s: s].index.tolist()
+                if imputed_locs:
+                    records = []
+                    for idx, col in imputed_locs:
+                        before_val = df_before.at[idx, col] if col in df_before.columns else np.nan
+                        after_val = df_after.at[idx, col] if col in df_after.columns else np.nan
+                        records.append({'index': idx, 'column': col, 'before': before_val, 'after': after_val})
+                    st.markdown("##### Rincian Nilai yang Diimputasi (contoh)")
+                    st.dataframe(pd.DataFrame(records).head(200), use_container_width=True)
+                else:
+                    st.write("Tidak ada nilai yang diimputasi pada langkah ini.")
+            st.markdown("**Catatan:** Imputasi numerik menggunakan median; kategorikal menggunakan mode. Lihat rumus di atas untuk detail.")
         
         # Step 3: Feature Encoding
         if 'df_step2' in st.session_state:
@@ -593,15 +707,32 @@ elif page == "🔧 Preprocessing & Encoding":
                         
                         # Show before encoding
                         st.markdown("##### 📊 Sebelum Encoding:")
-                        col1, col2 = st.columns(2)
-                        with col1:
-                            st.write(f"**Target kolom:** {TARGET_COL}")
-                            st.write("**Unique target values:**")
-                            st.write(y_raw.value_counts().head())
-                        
-                        with col2:
-                            st.write("**Feature columns (sample):**")
-                            st.dataframe(X.head(3))
+                        st.write(f"**Target kolom:** {TARGET_COL}")
+                        st.write("**Unique target values (sample):**")
+                        st.write(y_raw.value_counts().head(10))
+
+                        st.markdown("#### Fitur Sebelum Encoding (seluruhnya)")
+                        st.dataframe(X, use_container_width=True)
+
+                        # Informasi nilai kategorikal untuk setiap fitur kategorikal
+                        cat_features = X.select_dtypes(exclude='number').columns.tolist()
+                        if cat_features:
+                            st.markdown('#### Nilai Kategorikal per Fitur (unique values dan frekuensi)')
+                            cat_info_rows = []
+                            for c in cat_features:
+                                try:
+                                    vc = X[c].value_counts(dropna=False)
+                                    # create a compact string listing unique values (truncate if too long)
+                                    entries = [f"{idx} ({cnt})" for idx, cnt in vc.items()]
+                                    vals_str = ", ".join(entries[:50])
+                                    if len(entries) > 50:
+                                        vals_str += f", ... (+{len(entries)-50} more)"
+                                    cat_info_rows.append({'Feature': c, 'UniqueCount': int(vc.size), 'Values(sample)': vals_str})
+                                except Exception:
+                                    cat_info_rows.append({'Feature': c, 'UniqueCount': 0, 'Values(sample)': 'Tidak dapat mengekstrak'})
+                            st.dataframe(pd.DataFrame(cat_info_rows), use_container_width=True)
+                        else:
+                            st.write('Tidak ada fitur kategorikal yang terdeteksi sebelum encoding.')
                         
                         # Manual encoding for categorical columns
                         X.columns = [c.strip() for c in X.columns]
@@ -650,24 +781,93 @@ elif page == "🔧 Preprocessing & Encoding":
                         
                         # Show after encoding
                         st.markdown("##### ✅ Setelah Encoding:")
-                        col1, col2 = st.columns(2)
-                        with col1:
-                            st.write("**Hasil Encoding:**")
-                            for result in encoding_results:
-                                st.write(result)
-                            
-                            st.write("**Target Label Mapping:**")
-                            label_mapping = {cls: i for i, cls in enumerate(label_y.classes_)}
-                            st.json(label_mapping)
-                        
-                        with col2:
-                            st.write("**Feature setelah encoding (sample):**")
-                            st.dataframe(X.head(3))
-                            
-                            if unmapped_report:
-                                st.warning("⚠️ Nilai yang tidak berhasil di-encode:")
-                                for col, vals in unmapped_report.items():
-                                    st.write(f"- {col}: {vals}")
+                        st.write("**Hasil Encoding (ringkasan):**")
+                        for result in encoding_results:
+                            st.write(result)
+
+                        st.write("**Target Label Mapping:**")
+                        label_mapping = {cls: i for i, cls in enumerate(label_y.classes_)}
+                        st.json(label_mapping)
+
+                        st.markdown("#### Fitur Setelah Encoding (seluruhnya)")
+                        st.dataframe(X, use_container_width=True)
+
+                        # Tampilkan perbedaan mapping: untuk kolom yang dimapping secara manual, tampilkan tabel mapping
+                        mapping_summary = []
+                        for col_readable, mapper in manual_plans:
+                            key = col_readable.lower().replace(" ", "").replace("_", "")
+                            col_map = {c.lower().replace(" ", "").replace("_", ""): c for c in df_step2.columns}
+                            if key not in col_map:
+                                continue
+                            col = col_map[key]
+                            before_vals = df_step2[col].astype(str)
+                            # Create mapping table from unique before raw string to mapped numeric (if possible)
+                            uniq = before_vals.unique()
+                            map_rows = []
+                            for u in uniq:
+                                mapped = mapper.get(_norm(str(u)), None)
+                                map_rows.append({'column': col, 'raw_value': u, 'mapped_value': mapped})
+                            mapping_summary.extend(map_rows)
+
+                        if mapping_summary:
+                            st.markdown("#### Ringkasan Mapping Manual (raw -> mapped)")
+                            st.dataframe(pd.DataFrame(mapping_summary), use_container_width=True)
+                        else:
+                            st.write("Tidak ada kolom yang dimapping secara manual pada langkah ini.")
+
+                        # Tampilkan contoh perubahan baris: kolom yang berubah tipe/isi karena encoding
+                        changed_records = []
+                        for col_readable, mapper in manual_plans:
+                            key = col_readable.lower().replace(" ", "").replace("_", "")
+                            col_map = {c.lower().replace(" ", "").replace("_", ""): c for c in df_step2.columns}
+                            if key not in col_map:
+                                continue
+                            col = col_map[key]
+                            for idx, raw in df_step2[col].astype(str).items():
+                                mapped = mapper.get(_norm(str(raw)), None)
+                                if mapped is not None and str(raw) != str(mapped):
+                                    changed_records.append({'index': idx, 'column': col, 'before': raw, 'after': mapped})
+                        if changed_records:
+                            st.markdown("#### Rincian Perubahan Karena Encoding")
+                            st.dataframe(pd.DataFrame(changed_records), use_container_width=True)
+
+                        if unmapped_report:
+                            st.warning("⚠️ Nilai yang tidak berhasil di-encode:")
+                            for col, vals in unmapped_report.items():
+                                st.write(f"- {col}: {vals}")
+
+                        # Show value counts before/after for manual-mapped columns as tables (no grafik)
+                        st.markdown("#### Perbandingan Nilai Kategori (Sebelum vs Sesudah) untuk kolom yang di-mapping (tabel)")
+                        for col_readable, mapper in manual_plans:
+                            key = col_readable.lower().replace(" ", "").replace("_", "")
+                            col_map = {c.lower().replace(" ", "").replace("_", ""): c for c in df_step2.columns}
+                            if key not in col_map:
+                                continue
+                            col = col_map[key]
+
+                            st.markdown(f"**{col}**")
+                            before_counts = None
+                            after_counts = None
+                            try:
+                                before_counts = df_step2[col].value_counts(dropna=False).rename_axis('value').reset_index(name='count_before')
+                            except Exception:
+                                before_counts = pd.DataFrame({'value': [], 'count_before': []})
+                            try:
+                                after_counts = X[col].value_counts(dropna=False).rename_axis('value').reset_index(name='count_after')
+                            except Exception:
+                                after_counts = pd.DataFrame({'value': [], 'count_after': []})
+
+                            # Merge for side-by-side comparison
+                            try:
+                                merged = pd.merge(before_counts, after_counts, on='value', how='outer').fillna(0)
+                                # make counts ints where possible
+                                if 'count_before' in merged.columns:
+                                    merged['count_before'] = merged['count_before'].astype(int)
+                                if 'count_after' in merged.columns:
+                                    merged['count_after'] = merged['count_after'].astype(int)
+                                st.dataframe(merged.sort_values(by=['count_before'], ascending=False), use_container_width=True)
+                            except Exception:
+                                st.write('Tidak dapat menampilkan tabel perbandingan untuk kolom ini.')
                         
                         # Save to session state
                         st.session_state['X_encoded'] = X
@@ -679,6 +879,52 @@ elif page == "🔧 Preprocessing & Encoding":
                         
                     except Exception as e:
                         st.error(f"❌ Error saat encoding: {str(e)}")
+        # Jika encoding sudah dilakukan pada sesi ini, tampilkan ringkasan agar tidak tertutup
+        if 'X_encoded' in st.session_state:
+            st.markdown('---')
+            st.markdown('#### Hasil Encoding (disimpan dalam sesi)')
+            X_saved = st.session_state['X_encoded']
+            st.write(f"**Jumlah baris:** {X_saved.shape[0]}  —  **Jumlah fitur:** {X_saved.shape[1]}")
+            df_before_enc = st.session_state.get('df_step2', None)
+            if df_before_enc is not None:
+                cat_features = df_before_enc.select_dtypes(exclude='number').columns.tolist()
+                if cat_features:
+                    st.markdown('##### Nilai Kategorikal Asli per Fitur (raw counts)')
+                    rows = []
+                    for c in cat_features:
+                        try:
+                            vc = df_before_enc[c].value_counts(dropna=False)
+                            vals = ', '.join([f"{idx}({cnt})" for idx, cnt in vc.items()][:50])
+                            rows.append({'Feature': c, 'UniqueCount': int(vc.size), 'Values(sample)': vals})
+                        except Exception:
+                            rows.append({'Feature': c, 'UniqueCount': 0, 'Values(sample)': 'Tidak dapat ekstrak'})
+                    st.dataframe(pd.DataFrame(rows), use_container_width=True)
+                else:
+                    st.write('Tidak ada fitur kategorikal sebelum encoding.')
+            # Tampilkan mapping summary jika ada
+            manual_plans = [
+                ("Kerebahan", map_kerebahan),
+                ("TeksturNasi", map_teksturnasi),
+                ("KetahananTerhadapHama", map_ketahanan),
+                ("Kerontokan", map_kerontokan),
+                ("WarnaGabah", map_warnagabah),
+            ]
+            mapping_summary = []
+            for col_readable, mapper in manual_plans:
+                key = col_readable.lower().replace(" ", "").replace("_", "")
+                col_map = {c.lower().replace(" ", "").replace("_", ""): c for c in (df_before_enc.columns if df_before_enc is not None else [])}
+                if key not in col_map:
+                    continue
+                col = col_map[key]
+                try:
+                    uniq = df_before_enc[col].astype(str).unique()
+                    for u in uniq:
+                        mapping_summary.append({'column': col, 'raw_value': u, 'mapped_value': mapper.get(_norm(str(u)), None)})
+                except Exception:
+                    pass
+            if mapping_summary:
+                st.markdown('##### Ringkasan Mapping Manual (raw -> mapped)')
+                st.dataframe(pd.DataFrame(mapping_summary), use_container_width=True)
         
         # Step 4: Feature Scaling
         if 'X_encoded' in st.session_state and 'y_encoded' in st.session_state:
@@ -695,33 +941,73 @@ elif page == "🔧 Preprocessing & Encoding":
             if st.button("📏 Mulai Scaling"):
                 with st.spinner("Melakukan scaling fitur..."):
                     X_encoded = st.session_state['X_encoded'].copy()
-                    
+
                     # Show before scaling
                     st.markdown("##### 📊 Sebelum Scaling:")
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        st.write("**Statistik fitur sebelum scaling:**")
-                        st.dataframe(X_encoded.describe())
-                    
-                    with col2:
-                        st.write("**Sample data:**")
-                        st.dataframe(X_encoded.head(3))
-                    
+                    st.write("**Statistik fitur sebelum scaling:**")
+                    st.dataframe(X_encoded.describe(), use_container_width=True)
+
+                    st.markdown("#### Fitur Sebelum Scaling (seluruhnya)")
+                    st.dataframe(X_encoded, use_container_width=True)
+
                     # Scaling
                     scaler = StandardScaler()
                     X_scaled = pd.DataFrame(scaler.fit_transform(X_encoded), columns=X_encoded.columns, index=X_encoded.index)
-                    
+
                     # Show after scaling
                     st.markdown("##### ✅ Setelah Scaling:")
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        st.write("**Statistik fitur setelah scaling:**")
-                        st.dataframe(X_scaled.describe())
-                    
-                    with col2:
-                        st.write("**Sample data:**")
-                        st.dataframe(X_scaled.head(3))
-                    
+                    st.write("**Statistik fitur setelah scaling:**")
+                    st.dataframe(X_scaled.describe(), use_container_width=True)
+
+                    st.markdown("#### Fitur Setelah Scaling (seluruhnya)")
+                    st.dataframe(X_scaled, use_container_width=True)
+
+                    # Penjelasan terperinci tentang scaling (tanpa grafik)
+                    st.markdown('#### Penjelasan Teknik Scaling (tanpa grafik)')
+                    st.markdown(
+                        "Scaling mengubah skala fitur sehingga memiliki mean=0 dan standar deviasi=1. Di aplikasi ini kita menggunakan StandardScaler yang melakukan transformasi z-score untuk setiap fitur numerik."
+                    )
+                    st.latex(r"z = \frac{x - \mu}{\sigma}")
+                    st.markdown(
+                        "Keterangan: `x` = nilai fitur, `\mu` = mean kolom, `\sigma` = standar deviasi kolom (population std). Hasil `z` memiliki mean ≈ 0 dan std ≈ 1 pada data training."
+                    )
+
+                    # Show small numeric example using first numeric column (if exists)
+                    num_cols = X_encoded.select_dtypes(include="number").columns.tolist()
+                    if num_cols:
+                        ex_col = num_cols[0]
+                        mu = X_encoded[ex_col].mean()
+                        sigma = X_encoded[ex_col].std(ddof=0)
+                        example_val = X_encoded[ex_col].dropna().iloc[0]
+                        z_ex = (example_val - mu) / sigma if sigma != 0 else np.nan
+                        st.markdown(f"Contoh untuk kolom **{ex_col}**: mean = {mu:.3f}, std = {sigma:.3f}")
+                        st.markdown(f"Jika x = {example_val:.3f}, maka z = (x - mean)/std ≈ {z_ex:.3f}")
+                    else:
+                        st.markdown("Tidak ada kolom numerik untuk contoh perhitungan.")
+
+                    # Manfaat dan kegunaan scaling
+                    st.markdown('#### Mengapa melakukan Scaling — Manfaat & Kegunaan')
+                    st.markdown(
+                        """
+                        - Menormalkan skala fitur sehingga fitur dengan rentang besar tidak mendominasi pembelajaran model.
+                        - Meningkatkan konvergensi algoritma optimisasi (mis. gradient-based) dan stabilitas numerik.
+                        - Diperlukan untuk algoritma berbasis jarak atau kernel (mis. KNN, SVM, K-Means).
+                        - Membantu regularisasi (mis. L1/L2) bekerja konsisten pada semua fitur.
+                        - Catatan: untuk model tree-based (Decision Tree, Random Forest) scaling biasanya tidak diperlukan.
+                        """,
+                        unsafe_allow_html=True,
+                    )
+
+                    st.markdown('#### Hasil yang Diharapkan setelah Scaling')
+                    st.markdown(
+                        """
+                        - Mean setiap fitur ≈ 0 dan standar deviasi ≈ 1 pada data training.
+                        - Model berbasis jarak atau kernel akan memberikan hasil lebih stabil dan adil antar fitur.
+                        - Tidak mengubah hubungan antar fitur (hanya skala), sehingga nilai prediksi seharusnya konsisten secara relatif.
+                        """,
+                        unsafe_allow_html=True,
+                    )
+
                     # Save preprocessing artifacts
                     preprocess_bundle = {
                         "scaler": scaler,
@@ -730,13 +1016,29 @@ elif page == "🔧 Preprocessing & Encoding":
                         "feature_cols": list(X_encoded.columns),
                     }
                     joblib.dump(preprocess_bundle, "preprocess_artifacts.pkl")
-                    
+
                     # Save to session state
                     st.session_state['X_scaled'] = X_scaled
                     st.session_state['preprocessing_complete'] = True
-                    
+
                     st.success("✅ Tahap 4 selesai!")
                     st.success("🎉 Semua tahap preprocessing selesai! Data siap untuk training.")
+
+        # Jika scaling sudah dilakukan pada sesi ini, tampilkan ringkasan agar tidak tertutup
+        if 'X_scaled' in st.session_state:
+            st.markdown('---')
+            st.markdown('#### Hasil Scaling (disimpan dalam sesi)')
+            X_enc_saved = st.session_state.get('X_encoded', None)
+            X_scaled_saved = st.session_state.get('X_scaled', None)
+            if X_enc_saved is not None and X_scaled_saved is not None:
+                st.write(f"**Jumlah baris:** {X_enc_saved.shape[0]}  —  **Jumlah fitur sebelum scaling:** {X_enc_saved.shape[1]}")
+                st.markdown('##### Ringkasan Scaling yang Disimpan')
+                st.markdown(
+                    "Aplikasi menyimpan `scaler` (StandardScaler) yang digunakan untuk mentransformasikan fitur. Dalam prediksi, scaler ini dipakai untuk memastikan input pengguna diskalakan sama dengan data training. Scaling tidak mengubah urutan atau hubungan relatif antar nilai, hanya skala (z-score)."
+                )
+                st.markdown("**Perhatian:** Jika Anda mengubah data asli (mis. tambahkan fitur baru), scaler harus diperbarui dengan training ulang agar konsisten.")
+            else:
+                st.write('Data hasil scaling tidak lengkap di session.')
 
 # Page 4: Model Training
 elif page == "🤖 Training Model":
