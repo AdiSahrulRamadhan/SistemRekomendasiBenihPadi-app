@@ -5,9 +5,11 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import joblib
 import os
+import time
 from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.model_selection import train_test_split, StratifiedShuffleSplit, StratifiedKFold, GridSearchCV
-from sklearn.tree import DecisionTreeClassifier
+from sklearn.tree import DecisionTreeClassifier, plot_tree
+from sklearn.tree import plot_tree
 from sklearn.naive_bayes import GaussianNB
 from sklearn.svm import SVC
 from sklearn.pipeline import Pipeline
@@ -109,8 +111,8 @@ with st.sidebar:
     if st.button("🤖 Training Model", use_container_width=True, key="nav_training"):
         st.session_state.page = "🤖 Training Model"
     
-    if st.button("🔮 Testing/Prediksi", use_container_width=True, key="nav_testing"):
-        st.session_state.page = "🔮 Testing/Prediksi"
+    if st.button("🔮 Rekomendasi", use_container_width=True, key="nav_testing"):
+        st.session_state.page = "🔮 Rekomendasi"
 
 # Get current page from session state or default
 page = st.session_state.get('page', "📤 Upload Data")
@@ -1055,7 +1057,7 @@ elif page == "🤖 Training Model":
         - Untuk SVM, tersedia opsi untuk memakai Grid Search atau parameter rekomendasi (lebih cepat).
         - Metrik yang dihitung: Accuracy, Precision, Recall, F1 (macro). Confusion matrix akan ditampilkan untuk analisis lebih lanjut.
         - Selama training, data duplikat pada fitur+target dihapus otomatis (readable info ditampilkan jika ada).
-        - Hasil training (model final, best params, preprocessing artifacts) disimpan sebagai file `.joblib` dan metrik disimpan di sesi untuk diperiksa di halaman Testing/Prediksi.
+        - Hasil training (model final, best params, preprocessing artifacts) disimpan sebagai file `.joblib` dan metrik disimpan di sesi untuk diperiksa di halaman Rekomendasi.
         - Perhatian: training dengan banyak repetisi dan grid search dapat memakan waktu. Untuk percobaan cepat, turunkan nilai repetisi atau non-aktifkan grid search.
         """,
         unsafe_allow_html=True,
@@ -1182,9 +1184,13 @@ elif page == "🤖 Training Model":
                         
                         progress_bar = st.progress(0)
                         status_text = st.empty()
+
+                        # Collect per-fold details for transparency
+                        fold_records = []
                         
                         for i, (tr, te) in enumerate(sss.split(X_clean, y_clean)):
                             status_text.text(f"Fold {i+1}/{n_repeats} - {model_name}")
+                            fold_start = time.time()
                             
                             Xtr, Xte = X_clean[tr], X_clean[te]
                             ytr, yte = y_clean[tr], y_clean[te]
@@ -1283,13 +1289,34 @@ elif page == "🤖 Training Model":
                             
                             yhat = best_model.predict(Xte)
                             
-                            accs.append(accuracy_score(yte, yhat))
-                            precs.append(precision_score(yte, yhat, average="macro", zero_division=0))
-                            recs.append(recall_score(yte, yhat, average="macro", zero_division=0))
-                            f1s.append(f1_score(yte, yhat, average="macro", zero_division=0))
+                            acc = accuracy_score(yte, yhat)
+                            prec = precision_score(yte, yhat, average="macro", zero_division=0)
+                            rec = recall_score(yte, yhat, average="macro", zero_division=0)
+                            f1s_val = f1_score(yte, yhat, average="macro", zero_division=0)
+
+                            accs.append(acc)
+                            precs.append(prec)
+                            recs.append(rec)
+                            f1s.append(f1s_val)
                             best_params_list.append(best_params)
-                            
+
                             cm_sum += confusion_matrix(yte, yhat, labels=labels)
+
+                            # record fold details
+                            fold_time = time.time() - fold_start
+                            try:
+                                best_params_display = best_params
+                            except Exception:
+                                best_params_display = str(best_params)
+                            fold_records.append({
+                                'fold': i+1,
+                                'accuracy': float(acc),
+                                'precision': float(prec),
+                                'recall': float(rec),
+                                'f1': float(f1s_val),
+                                'best_params': best_params_display,
+                                'duration_sec': round(fold_time, 3)
+                            })
                             
                             progress_bar.progress((i + 1) / n_repeats)
                         
@@ -1311,6 +1338,9 @@ elif page == "🤖 Training Model":
                                 "f1": f1s
                             }
                         }
+
+                        # Attach per-fold records to results for inspection
+                        results[model_name]['folds'] = fold_records
                         
                         # Train final model on full data
                         if model_name == "Decision Tree":
@@ -1357,6 +1387,149 @@ elif page == "🤖 Training Model":
                         results[model_name]["best_params_final"] = best_params_final
                         
                         st.success(f"✅ {model_name} training selesai!")
+
+                        # Display per-fold computations for transparency
+                        try:
+                            if results[model_name].get('folds'):
+                                st.markdown("##### Detail Per-Fold (setiap repetisi)")
+                                folds_df = pd.DataFrame(results[model_name]['folds'])
+                                # format numbers
+                                if not folds_df.empty:
+                                    folds_df['accuracy'] = folds_df['accuracy'].map(lambda x: f"{x:.4f}")
+                                    folds_df['precision'] = folds_df['precision'].map(lambda x: f"{x:.4f}")
+                                    folds_df['recall'] = folds_df['recall'].map(lambda x: f"{x:.4f}")
+                                    folds_df['f1'] = folds_df['f1'].map(lambda x: f"{x:.4f}")
+                                st.dataframe(folds_df, use_container_width=True)
+                        except Exception:
+                            pass
+
+                        # Model-specific detailed outputs and visualizations
+                        try:
+                            final_model = results[model_name].get('final_model')
+                            st.markdown('#### Detail Perhitungan & Visualisasi Model')
+                            # Decision Tree: plot the tree and show feature importances
+                            if 'decisiontree' in model_name.lower() or model_name.lower().startswith('decision'):
+                                try:
+                                    clf = final_model.named_steps['clf'] if hasattr(final_model, 'named_steps') else final_model
+                                    st.markdown('##### Decision Tree - Struktur Pohon (visual)')
+                                    feat_names = list(X_scaled.columns) if isinstance(X_scaled, pd.DataFrame) else None
+                                    fig, ax = plt.subplots(figsize=(14, 8))
+                                    plot_tree(clf, feature_names=feat_names, class_names=None, filled=True, rounded=True, fontsize=8, ax=ax)
+                                    plt.tight_layout()
+                                    st.pyplot(fig)
+
+                                    # Feature importances
+                                    if hasattr(clf, 'feature_importances_'):
+                                        fi = pd.Series(clf.feature_importances_, index=feat_names if feat_names is not None else range(len(clf.feature_importances_)))
+                                        st.markdown('##### Feature Importances')
+                                        st.dataframe(fi.sort_values(ascending=False).reset_index().rename(columns={'index':'feature',0:'importance'}), use_container_width=True)
+                                except Exception as e:
+                                    st.write(f'Tidak dapat menampilkan visualisasi pohon: {e}')
+
+                            # Gaussian Naive Bayes: show class prior and class means/vars (may be after PCA)
+                            if 'naive' in model_name.lower() or 'gaussian' in model_name.lower():
+                                try:
+                                    clf = final_model.named_steps['clf'] if hasattr(final_model, 'named_steps') else final_model
+                                    st.markdown('##### GaussianNB - Parameter Kelas')
+                                    priors = getattr(clf, 'class_prior_', None)
+                                    thetas = getattr(clf, 'theta_', None)
+                                    vars_ = getattr(clf, 'var_', None)
+                                    if priors is not None:
+                                        classes = st.session_state['label_y'].inverse_transform(np.arange(len(priors))) if 'label_y' in st.session_state else np.arange(len(priors))
+                                        pr_df = pd.DataFrame({'class': classes, 'prior': priors})
+                                        st.dataframe(pr_df, use_container_width=True)
+                                    if thetas is not None:
+                                        # if PCA was used, name components
+                                        if hasattr(final_model.named_steps.get('pca', None), 'n_components_'):
+                                            cols = [f'PC{i+1}' for i in range(thetas.shape[1])]
+                                        else:
+                                            cols = list(X_scaled.columns)[:thetas.shape[1]] if isinstance(X_scaled, pd.DataFrame) else [f'feat_{i}' for i in range(thetas.shape[1])]
+                                        theta_df = pd.DataFrame(thetas, columns=cols)
+                                        theta_df['class'] = st.session_state['label_y'].inverse_transform(np.arange(theta_df.shape[0])) if 'label_y' in st.session_state else np.arange(theta_df.shape[0])
+                                        theta_df = theta_df.set_index('class')
+                                        st.markdown('Class means (theta)')
+                                        st.dataframe(theta_df, use_container_width=True)
+                                    if vars_ is not None:
+                                        var_df = pd.DataFrame(vars_, columns=cols)
+                                        var_df['class'] = st.session_state['label_y'].inverse_transform(np.arange(var_df.shape[0])) if 'label_y' in st.session_state else np.arange(var_df.shape[0])
+                                        var_df = var_df.set_index('class')
+                                        st.markdown('Class variances (var_)')
+                                        st.dataframe(var_df, use_container_width=True)
+                                except Exception as e:
+                                    st.write(f'Tidak dapat menampilkan parameter GaussianNB: {e}')
+
+                            # SVM: show support vectors count and PCA 2D scatter with support vectors highlighted
+                            if 'svm' in model_name.lower() or 'support' in model_name.lower():
+                                try:
+                                    clf = final_model.named_steps['clf'] if hasattr(final_model, 'named_steps') else final_model
+                                    st.markdown('##### SVM - Support Vectors & Margin Info')
+                                    n_support = getattr(clf, 'n_support_', None)
+                                    if n_support is not None:
+                                        st.write(f'Number of support vectors per class: {n_support}')
+                                    total_sv = sum(n_support) if n_support is not None else None
+                                    if total_sv is not None:
+                                        st.write(f'Total support vectors: {total_sv}')
+
+                                    # 2D PCA view (use X_clean, y_clean from training loop if available)
+                                    try:
+                                        if 'X_clean' in locals() and X_clean is not None:
+                                            pca_vis = PCA(n_components=2)
+                                            X2 = pca_vis.fit_transform(X_clean)
+                                            sv = clf.support_vectors_
+                                            sv2 = pca_vis.transform(sv)
+                                            fig, ax = plt.subplots(figsize=(8, 6))
+                                            scatter = ax.scatter(X2[:,0], X2[:,1], c=y_clean, cmap='tab10', alpha=0.6)
+                                            ax.scatter(sv2[:,0], sv2[:,1], facecolors='none', edgecolors='k', s=80, linewidths=1.5, label='support vectors')
+                                            ax.set_title('PCA 2D view (training data) with support vectors')
+                                            ax.legend()
+                                            st.pyplot(fig)
+                                    except Exception:
+                                        st.write('Tidak dapat membuat visualisasi PCA untuk SVM (data mungkin tidak cocok).')
+                                except Exception as e:
+                                    st.write(f'Tidak dapat menampilkan informasi SVM: {e}')
+
+                            # --- Model explanations (formulas & short intuitions) ---
+                            try:
+                                st.markdown('---')
+                                st.markdown('##### Penjelasan Singkat tentang Metode yang Digunakan')
+
+                                # Decision Tree explanation
+                                if 'decisiontree' in model_name.lower() or model_name.lower().startswith('decision'):
+                                    st.markdown("**Decision Tree** menggunakan pembelahan berdasarkan impurity (mis. Entropy atau Gini).")
+                                    st.markdown("Intuisi: pemisahan terbaik adalah yang menghasilkan penurunan impurity terbesar. Tree tumbuh dengan memilih fitur dan threshold yang memaksimalkan Information Gain (IG).")
+                                    try:
+                                        st.latex(r"H(S) = -\sum_{i} p_i \log_2 p_i")
+                                        st.latex(r"IG = H(\mathrm{Parent}) - \sum_{\mathrm{child}} \frac{|\mathrm{child}|}{|\mathrm{parent}|} H(\mathrm{child})")
+                                    except Exception:
+                                        # fallback to plain text if latex rendering fails
+                                        st.markdown("Entropy: H(S) = -Σ p_i log2 p_i")
+                                        st.markdown("Information Gain (IG): IG = H(Parent) - Σ (|child|/|parent|) H(child)")
+
+                                # Gaussian Naive Bayes explanation
+                                if 'naive' in model_name.lower() or 'gaussian' in model_name.lower():
+                                    st.markdown("**Gaussian Naive Bayes (GNB)** mengasumsikan fitur-fitur kondisional independen dan mengikuti distribusi Gaussian untuk tiap kelas.")
+                                    st.markdown("Intuisi: GNB menghitung mean (μ) dan variance (σ^2) untuk tiap fitur per kelas, lalu mengalikan likelihood fitur-fitur tersebut untuk mengestimasi kelas.")
+                                    try:
+                                        st.latex(r"P(C_k \mid x) \propto P(C_k) \prod_i P(x_i \mid C_k)")
+                                        st.latex(r"P(x_i \mid C_k) = \frac{1}{\sqrt{2\pi\sigma_{k,i}^2}} \exp\left(-\frac{(x_i-\mu_{k,i})^2}{2\sigma_{k,i}^2}\right)")
+                                    except Exception:
+                                        st.markdown("Posterior (prop): P(C_k | x) ∝ P(C_k) Π_i P(x_i | C_k)")
+                                        st.markdown("Gaussian likelihood: (1 / sqrt(2πσ^2)) exp(- (x-μ)^2 / (2σ^2))")
+
+                                # SVM explanation
+                                if 'svm' in model_name.lower() or 'support' in model_name.lower():
+                                    st.markdown("**Support Vector Machine (SVM, RBF kernel)** mencari hyperplane yang memaksimalkan margin antara kelas. Keputusan bergantung pada support vectors.")
+                                    st.markdown("Intuisi: titik data yang paling dekat dengan batas (support vectors) menentukan posisi hyperplane; parameter C mengontrol trade-off margin/penalti, sedangkan γ mengatur skala kernel RBF.")
+                                    try:
+                                        st.latex(r"f(x) = \operatorname{sign}\left(\sum_i \alpha_i y_i K(x_i, x) + b\right)")
+                                        st.latex(r"K(x, x') = \exp\left(-\gamma \|x - x'\|^2\right)")
+                                    except Exception:
+                                        st.markdown("Fungsi keputusan (dual): f(x) = sign( Σ_i α_i y_i K(x_i, x) + b )")
+                                        st.markdown("Kernel RBF: K(x,x') = exp(-γ ||x-x'||^2)")
+                            except Exception:
+                                pass
+                        except Exception:
+                            pass
                         
                     except Exception as e:
                         st.error(f"❌ Error training {model_name}: {str(e)}")
@@ -1415,11 +1588,11 @@ elif page == "🤖 Training Model":
                     plt.tight_layout()
                     st.pyplot(fig)
                 
-                st.success("🎉 Training semua model selesai! Lanjutkan ke halaman 'Testing/Prediksi'.")
+                st.success("🎉 Training semua model selesai! Lanjutkan ke halaman 'Rekomendasi'.")
 
-# Page 5: Testing/Prediksi
-elif page == "🔮 Testing/Prediksi":
-    st.markdown('<h2 class="sub-header">🔮 Testing/Prediksi Varietas Padi</h2>', unsafe_allow_html=True)
+# Page 5: Rekomendasi
+elif page == "🔮 Rekomendasi":
+    st.markdown('<h2 class="sub-header">🔮 Rekomendasi Varietas Padi</h2>', unsafe_allow_html=True)
     
     # Check available models
     model_files = {
