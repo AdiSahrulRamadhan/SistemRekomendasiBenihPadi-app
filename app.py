@@ -236,20 +236,21 @@ if page == "📤 Upload Data":
             
             # Save to session state
             st.session_state['df_original'] = df.copy()
-            
-            # Display basic info
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.markdown("### 📋 Info Dataset")
-                st.write(f"**Jumlah baris:** {df.shape[0]}")
-                st.write(f"**Jumlah kolom:** {df.shape[1]}")
-                st.write(f"**Ukuran dataset:** {df.size}")
-            
-            with col2:
-                st.markdown("### 📊 Contoh Data")
-                st.dataframe(df.head())
-            
+
+            # Display basic info (top)
+            st.markdown("### 📋 Info Dataset")
+            st.write(f"**Jumlah baris:** {df.shape[0]}")
+            st.write(f"**Jumlah kolom:** {df.shape[1]}")
+            st.write(f"**Ukuran dataset:** {df.size}")
+
+            # Show entire dataset below the info (full-width)
+            st.markdown("### 📊 Data (Semua Baris)")
+            try:
+                st.dataframe(df, use_container_width=True)
+            except Exception:
+                # fallback to write if dataframe is too large for interactive rendering
+                st.write(df)
+
             st.info("✅ Data berhasil diupload! Lanjutkan ke tahap 'Informasi Data' untuk melihat analisis detail.")
                     
         except Exception as e:
